@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.3
+
+- `/ring-master-ship` runs every enabled stage, however small the job looks (a test session skipped spec review on its own judgement).
+
 ## 0.7.2
 
 - `/ring-master-decide` empties `questions.yml` to `[]` instead of deleting it (runner sessions can't run `rm`), and `/ring-master-inbox --answers` says plainly that it relaunches the stages the answers unblock.

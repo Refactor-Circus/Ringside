@@ -33,7 +33,7 @@ Enabled stages in this package: ticket **{{stage_ticket}}**, shape **{{stage_sha
 
 ## 2. Run stages in order
 
-Invoke each next stage's skill with the Skill tool (for example `ring-master-shape-spec` with the spec id as its arguments), one after another, stopping when a stage needs the user (a question, a sign-off, an escalation) or when the PR is open. Tell the user in one line what stage you're on.
+Invoke each next stage's skill with the Skill tool (for example `ring-master-shape-spec` with the spec id as its arguments), one after another, stopping when a stage needs the user (a question, a sign-off, an escalation) or when the PR is open. Tell the user in one line what stage you're on. Run every enabled stage, however small the job looks: whether a stage is worth it is the user's call, made in `ring-master.yml`, never yours.
 
 ## Providers
 
