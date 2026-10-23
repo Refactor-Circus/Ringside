@@ -1,7 +1,6 @@
 ---
 name: ring-master-create-tasks
-description: Break an approved Ring Master spec into dependency-ordered task groups in tasks.md, tests first.
-disable-model-invocation: true
+description: Break an approved Ring Master spec into dependency-ordered task groups in tasks.md, tests first. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[spec id; defaults to the newest approved spec]"
 ---
 {{marker}}

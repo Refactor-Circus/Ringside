@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0
+
+- Stage skills can be chained: `/ring-master-ship` and `/ring-master-inbox` now invoke them with the Skill tool, which Claude Code refuses for skills marked `disable-model-invocation`. Every stage skill (ticket, shape, write, spec review, tasks, factory, implement, verify, decide, approve, rework, post-mortem, inject-standards) and ship itself are model-invocable, and their descriptions say they run only inside a Ring Master job the user started or when the user asks. `/ring-master-inbox`, discover-standards, plan-product and propose stay user-only.
+
 ## 0.6.0
 
 - `/ring-master-inbox` exists in every project (sessions RingMaster's runner starts in a package need it there) and takes the runner's arguments: `--answers` (apply answers only) and `--task=<id> --session=<name>` (ship that one already-claimed task).

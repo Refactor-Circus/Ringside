@@ -1,7 +1,6 @@
 ---
 name: ring-master-factory
-description: Build an approved Ring Master spec with the factory workflow, then open the PR, ask the user's design questions, or report the escalation.
-disable-model-invocation: true
+description: Build an approved Ring Master spec with the factory workflow, then open the PR, ask the user's design questions, or report the escalation. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[spec id; defaults to the newest approved spec]"
 ---
 {{marker}}

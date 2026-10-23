@@ -1,7 +1,6 @@
 ---
 name: ring-master-decide
-description: Ask the user the architectural questions a Ring Master run stopped on, record the answers, and relaunch.
-disable-model-invocation: true
+description: Ask the user the architectural questions a Ring Master run stopped on, record the answers, and relaunch. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[spec id]"
 ---
 {{marker}}

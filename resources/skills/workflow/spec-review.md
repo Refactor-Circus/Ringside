@@ -1,7 +1,6 @@
 ---
 name: ring-master-spec-review
-description: Critique a written Ring Master spec with independent critics, fix what isn't architectural, ask the user the design questions, then get their approval.
-disable-model-invocation: true
+description: Critique a written Ring Master spec with independent critics, fix what isn't architectural, ask the user the design questions, then get their approval. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[spec id; defaults to the newest written spec]"
 ---
 {{marker}}

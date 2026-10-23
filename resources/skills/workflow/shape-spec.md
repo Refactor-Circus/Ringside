@@ -1,7 +1,6 @@
 ---
 name: ring-master-shape-spec
-description: Shape a new feature or change into a Ring Master spec folder (scope, decisions, references, matched standards).
-disable-model-invocation: true
+description: Shape a new feature or change into a Ring Master spec folder (scope, decisions, references, matched standards). Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[what you want to build]"
 ---
 {{marker}}

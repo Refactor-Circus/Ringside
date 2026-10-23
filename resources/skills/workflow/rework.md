@@ -1,7 +1,6 @@
 ---
 name: ring-master-rework
-description: Send a Ring Master job back to the factory with the user's note as a must-fix finding.
-disable-model-invocation: true
+description: Send a Ring Master job back to the factory with the user's note as a must-fix finding. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[spec id] [note]"
 ---
 {{marker}}

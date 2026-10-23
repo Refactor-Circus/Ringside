@@ -1,7 +1,6 @@
 ---
 name: ring-master-inject-standards
-description: Load specific Ring Master standards into context by key, category or tag.
-disable-model-invocation: true
+description: Load specific Ring Master standards into context by key, category or tag. Use when the user asks, or from another Ring Master skill.
 argument-hint: "[keys, categories or tags, e.g. testing/pest-style architecture]"
 ---
 {{marker}}

@@ -1,7 +1,6 @@
 ---
 name: ring-master-approve
-description: Accept an escalated Ring Master job as it stands and open its PR.
-disable-model-invocation: true
+description: Accept an escalated Ring Master job as it stands and open its PR. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[spec id]"
 ---
 {{marker}}

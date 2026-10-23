@@ -1,7 +1,6 @@
 ---
 name: ring-master-verify-spec
-description: Verify a Ring Master spec against its acceptance criteria and the full quality gate; mark it done only when everything passes.
-disable-model-invocation: true
+description: Verify a Ring Master spec against its acceptance criteria and the full quality gate; mark it done only when everything passes. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[spec id; defaults to the newest in-progress spec]"
 ---
 {{marker}}

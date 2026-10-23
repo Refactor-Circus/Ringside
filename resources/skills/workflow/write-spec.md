@@ -1,7 +1,6 @@
 ---
 name: ring-master-write-spec
-description: Write spec.md with numbered acceptance criteria and standards.md for a shaped Ring Master spec, then mark it approved.
-disable-model-invocation: true
+description: Write spec.md with numbered acceptance criteria and standards.md for a shaped Ring Master spec, then mark it approved. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[spec id; defaults to the newest shaping spec]"
 ---
 {{marker}}

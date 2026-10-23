@@ -27,19 +27,21 @@ RingMaster's runner starts headless sessions with one of two arguments; follow i
 
 Call `pending-answers`. For each spec it lists, in that spec's `project_path`:
 
-- **decisions**: follow `/ring-master-decide` for that spec with these answers instead of asking: each becomes the next `D-xxx` entry (choice = `answer`, rationale = `note`, raised by = `source`, "answered in RingMaster"), comes out of `questions.yml`, and the stage named by its `source` runs again (step 6 there).
-- **escalations**: `Approve as is` → follow `/ring-master-approve` (the user accepted it in RingMaster; don't ask again). `Send back with a note` → follow `/ring-master-rework` with the note.
+- **decisions**: invoke the `ring-master-decide` skill for that spec (Skill tool) and give it these answers instead of asking: each becomes the next `D-xxx` entry (choice = `answer`, rationale = `note`, raised by = `source`, "answered in RingMaster"), comes out of `questions.yml`, and the stage named by its `source` runs again (step 6 there).
+- **escalations**: `Approve as is` → invoke `ring-master-approve` (the user accepted it in RingMaster; don't ask again). `Send back with a note` → invoke `ring-master-rework` with the note.
 
 Apply answers even when nothing is queued: they are what unblocks stopped jobs. Any stage you relaunch here also runs unattended (below).
 
 ## 2. Take the next task
 
-Call `next-task`. If there is none, say the queue is empty and stop. Otherwise `claim-task`, change to the task's `project.path`, and follow `/ring-master-ship` with the task's `ship_input` as its argument, unattended:
+Call `next-task`. If there is none, say the queue is empty and stop. Otherwise `claim-task`, change to the task's `project.path`, and invoke the `ring-master-ship` skill with the Skill tool, with the task's `ship_input` as its arguments, unattended:
 
 - As soon as the job's spec folder exists, call `link-spec` with its id. From then on the task follows the spec's status.
 - Call `heartbeat` when each stage starts, with the stage as `message`, so the claim stays alive and the timeline shows progress.
 - Ship stopping because a stage waits on the user, or because the PR is open, is the normal end: leave the task as it is.
 - If the work cannot be done as asked, `release-task` with `failed: true` and the reason. If you have to stop for any other reason, `release-task` with the reason so another session can take it.
+
+Every stage is a skill you invoke with the Skill tool; this one is the only one the user has to start.
 
 ## Unattended mode
 

@@ -1,7 +1,6 @@
 ---
 name: ring-master-ticket
-description: Shape an idea into a ticket with the user and create it in the configured tracker.
-disable-model-invocation: true
+description: Shape an idea into a ticket with the user and create it in the configured tracker. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[idea]"
 ---
 {{marker}}

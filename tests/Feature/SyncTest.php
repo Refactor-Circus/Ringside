@@ -13,7 +13,8 @@ it('writes the index, summary, skills, subagent, hooks and managed block', funct
     expect($result->written)->toContain('docs/agent/standards.index.yml', 'docs/agent/standards.summary.md', '.claude/settings.json', 'AGENTS.md')
         ->and(glob($project->path('.claude/skills/ring-master-*/SKILL.md')))->toHaveCount(20)
         ->and($project->read('.claude/skills/ring-master-std-testing/SKILL.md'))->toContain("paths:\n  - 'tests/**'", 'vendor/refactor-circus/standards/standards/testing/pest-style.md')
-        ->and($project->read('.claude/skills/ring-master-shape-spec/SKILL.md'))->toContain('disable-model-invocation: true', 'docs/agent/specs/')->not->toContain('{{')
+        ->and($project->read('.claude/skills/ring-master-shape-spec/SKILL.md'))->toContain('never start it on your own', 'docs/agent/specs/')->not->toContain('disable-model-invocation')->not->toContain('{{')
+        ->and($project->read('.claude/skills/ring-master-inbox/SKILL.md'))->toContain('disable-model-invocation: true')
         ->and($project->read('.claude/agents/ring-master-implementer.md'))->toContain('skills: [ring-master-std-architecture, ring-master-std-testing]', 'maxTurns: 40')
         ->and($project->read('AGENTS.md'))->toStartWith("# Hand-written\n\nKeep me.\n")->toContain(ManagedBlock::START, '/ring-master-shape-spec');
 });

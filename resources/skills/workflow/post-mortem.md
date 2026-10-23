@@ -1,7 +1,6 @@
 ---
 name: ring-master-post-mortem
-description: Run the post-mortem for a finished Ring Master job and walk the user through the standards proposals it produces.
-disable-model-invocation: true
+description: Run the post-mortem for a finished Ring Master job and walk the user through the standards proposals it produces. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[spec id]"
 ---
 {{marker}}

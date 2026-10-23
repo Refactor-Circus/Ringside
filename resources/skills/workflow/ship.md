@@ -1,7 +1,6 @@
 ---
 name: ring-master-ship
-description: Take an idea or an existing ticket all the way through Ring Master, from ticket to PR to post-mortem, resuming wherever the job stands.
-disable-model-invocation: true
+description: Take an idea or an existing ticket all the way through Ring Master, from ticket to PR to post-mortem, resuming wherever the job stands. Start it only when the user asks to ship something, or from /ring-master-inbox.
 argument-hint: "[idea | ticket key or URL | spec id]"
 ---
 {{marker}}
@@ -34,7 +33,7 @@ Enabled stages in this package: ticket **{{stage_ticket}}**, shape **{{stage_sha
 
 ## 2. Run stages in order
 
-Run each next stage as its skill would, one after another, stopping when a stage needs the user (a question, a sign-off, an escalation) or when the PR is open. Tell the user in one line what stage you're on.
+Invoke each next stage's skill with the Skill tool (for example `ring-master-shape-spec` with the spec id as its arguments), one after another, stopping when a stage needs the user (a question, a sign-off, an escalation) or when the PR is open. Tell the user in one line what stage you're on.
 
 ## Providers
 

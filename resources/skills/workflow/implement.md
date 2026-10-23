@@ -1,7 +1,6 @@
 ---
 name: ring-master-implement
-description: Implement a Ring Master spec's task groups with one fresh-context subagent per group, running tests after each.
-disable-model-invocation: true
+description: Implement a Ring Master spec's task groups with one fresh-context subagent per group, running tests after each. Runs as a stage of a Ring Master job (from /ring-master-ship or /ring-master-inbox) or when the user asks; never start it on your own.
 argument-hint: "[spec id] [group number]"
 ---
 {{marker}}
