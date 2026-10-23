@@ -127,6 +127,7 @@ final readonly class Config
                 'namespace' => null,                 // root namespace prefix, e.g. Acme; default: from vendor
                 'features' => ['config'],            // laravel package flags: config, routes, views, translations, migrations, assets, commands, facade, boost-skill
                 'laravel_bin' => 'laravel',
+                'php' => '^8.5',                     // the PHP constraint every new package requires
             ],
         ];
     }

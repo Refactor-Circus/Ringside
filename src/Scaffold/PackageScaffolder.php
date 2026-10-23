@@ -106,6 +106,8 @@ final class PackageScaffolder
             file_put_contents($target.'/.gitignore', "/vendor\ncomposer.lock\n.phpunit.cache\n");
         }
 
+        $this->requirePhp($target.'/composer.json');
+
         $base = $this->root->config->string('host.base') ?: 'main';
 
         foreach ([['git', 'init', '-q', '-b', $base], ['git', 'add', '-A'], ['git', 'commit', '-q', '-m', "Scaffold {$plan['composer']}"]] as $step) {
@@ -119,6 +121,24 @@ final class PackageScaffolder
         (new WorkspaceConfig($this->root))->addPackage($plan['dir']);
 
         return $plan;
+    }
+
+    /**
+     * Pins the package's PHP constraint to `new_package.php`, whatever the
+     * skeleton shipped with, so every package in the workspace agrees.
+     */
+    private function requirePhp(string $manifest): void
+    {
+        $composer = json_decode((string) file_get_contents($manifest), true);
+
+        if (! is_array($composer)) {
+            return;
+        }
+
+        $require = is_array($composer['require'] ?? null) ? $composer['require'] : [];
+        $composer['require'] = ['php' => $this->root->config->string('new_package.php')] + $require;
+
+        file_put_contents($manifest, json_encode($composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)."\n");
     }
 
     /**

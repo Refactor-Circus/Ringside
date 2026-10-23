@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- Requires PHP 8.5.
+- `new-package` pins every new package to `new_package.php` (default `^8.5`), whatever the skeleton ships with.
+
 ## 0.2.0
 
 - Removed `ringside dashboard` and the `dashboard` config key: the RingMaster app is the board now. `check` names the key if it is still in `ring-master.yml`.

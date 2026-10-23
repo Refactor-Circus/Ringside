@@ -132,7 +132,7 @@ hooks:
   post_edit_format: { enabled: true, command: 'vendor/bin/pint {file}' }
   session_start_summary: true
 workspace: { packages: [], jobs_dir: .ring-master/jobs }   # set packages to work across several from a parent folder
-new_package: { type: laravel, vendor: null, namespace: null, features: [config], laravel_bin: laravel }
+new_package: { type: laravel, vendor: null, namespace: null, features: [config], laravel_bin: laravel, php: '^8.5' }
 ```
 
 `ringside check` validates the file.
@@ -162,4 +162,4 @@ Workflow subagents use your permission rules. To avoid prompts mid-run, allow `B
 
 ## Requirements
 
-PHP 8.3+, Composer 2, Claude Code with workflows for the factory, spec review and post-mortem. Node is only needed to run ringside's own workflow tests.
+PHP 8.5+, Composer 2, Claude Code with workflows for the factory, spec review and post-mortem. Node is only needed to run ringside's own workflow tests.

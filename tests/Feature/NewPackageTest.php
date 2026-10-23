@@ -59,6 +59,8 @@ it('creates a laravel package with the laravel installer, commits it and adds it
     (new PackageScaffolder($project))->create('Ledger');
 
     expect((string) $project->read('Ledger/args.txt'))->toContain("package\nLedger\n--no-interaction\n--package-name=acme/ledger")
+        ->and(json_decode((string) $project->read('Ledger/composer.json'), true)['require'])->toBe(['php' => '^8.5'])
+        ->and(Shell::run(['git', 'status', '--porcelain'], $project->path('Ledger'))[1])->toBe('')
         ->and(Shell::run(['git', 'log', '--oneline'], $project->path('Ledger'))[1])->toContain('Scaffold acme/ledger')
         ->and(Shell::run(['git', 'branch', '--show-current'], $project->path('Ledger'))[1])->toBe('main')
         ->and((string) $project->read('ring-master.yml'))->toContain('packages: [Keystone, Ledger]   # keep this comment')
@@ -73,6 +75,7 @@ it('creates a plain PHP package with composer init', function () {
 
     expect($manifest['name'])->toBe('acme/toolbox')
         ->and($manifest['description'])->toBe('Small tools')
+        ->and($manifest['require']['php'])->toBe('^8.5')
         ->and($manifest['autoload']['psr-4'])->toHaveKey('Acme\\Toolbox\\')
         ->and(Shell::run(['git', 'log', '--oneline'], $project->path('Toolbox'))[1])->toContain('Scaffold acme/toolbox');
 })->skipOnWindows();
