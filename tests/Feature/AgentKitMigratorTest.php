@@ -18,6 +18,7 @@ function agentKitInstall(): Project
         'AGENTS.md' => "# Pkg\n\n<!-- agent-kit:start -->\nold\n<!-- agent-kit:end -->\n",
         '.gitignore' => "/vendor\n\n# agent-kit generated files\n/.claude/skills/agent-kit-*/\n/.claude/agents/agent-kit-*.md\n/.agent-kit/\n",
         '.agent-kit/jobs/.gitkeep' => '',
+        'docs/agent/standards-feedback.md' => "# Standards feedback\n\n`/agent-kit-discover-standards` reads this log.\n\n| my row |\n",
         'composer.json' => json_encode(['require-dev' => ['refactor-circus/agent-kit' => '*']], JSON_UNESCAPED_SLASHES),
     ]);
     unlink($project->path(Config::FILE));
@@ -50,6 +51,7 @@ it('moves an agent-kit install to the Ring Master names', function () {
         ->and($settings['permissions']['allow'])->toBe(['Bash(git *)'])
         ->and((string) $project->read('AGENTS.md'))->toContain(ManagedBlock::START, ManagedBlock::END)->not->toContain('agent-kit:start')
         ->and((string) $project->read('.gitignore'))->toContain('/.claude/skills/ring-master-*/', '/.ring-master/')->not->toContain('agent-kit')
+        ->and((string) $project->read('docs/agent/standards-feedback.md'))->toContain('`/ring-master-discover-standards`', '| my row |')
         ->and(implode("\n", $log))->toContain('composer remove --dev refactor-circus/agent-kit')
         ->and((new AgentKitMigrator)->needed($project))->toBeFalse();
 });

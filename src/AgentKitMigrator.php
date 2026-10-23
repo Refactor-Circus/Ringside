@@ -31,7 +31,8 @@ final class AgentKitMigrator
             || is_dir($project->path(self::LEGACY_JOBS))
             || $this->generated($project) !== []
             || str_contains((string) $project->read('AGENTS.md'), '<!-- agent-kit:start -->')
-            || str_contains((string) $project->read('.claude/settings.json'), 'agent-kit-hook');
+            || str_contains((string) $project->read('.claude/settings.json'), 'agent-kit-hook')
+            || str_contains((string) $project->read($project->agentPath('standards-feedback.md')), '/agent-kit-');
     }
 
     /**
@@ -68,7 +69,7 @@ final class AgentKitMigrator
             }
         }
 
-        $log = [...$log, ...$this->hooks($project, $dryRun), ...$this->markers($project, $dryRun), ...$this->gitignore($project, $dryRun)];
+        $log = [...$log, ...$this->hooks($project, $dryRun), ...$this->markers($project, $dryRun), ...$this->gitignore($project, $dryRun), ...$this->feedback($project, $dryRun)];
 
         $manifest = (string) $project->read('composer.json');
 
@@ -219,6 +220,27 @@ final class AgentKitMigrator
         }
 
         return [($dryRun ? 'Would update ' : 'Updated ').'the agent-kit lines in .gitignore'];
+    }
+
+    /**
+     * The deviation log names the discovery skill; the rest is the user's.
+     *
+     * @return list<string>
+     */
+    private function feedback(Project $project, bool $dryRun): array
+    {
+        $file = $project->agentPath('standards-feedback.md');
+        $contents = (string) $project->read($file);
+
+        if (! str_contains($contents, '/agent-kit-')) {
+            return [];
+        }
+
+        if (! $dryRun) {
+            $project->write($file, str_replace('/agent-kit-', '/ring-master-', $contents));
+        }
+
+        return [($dryRun ? 'Would update ' : 'Updated ').'the skill names in '.$file];
     }
 
     /**
