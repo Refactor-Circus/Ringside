@@ -1,0 +1,18 @@
+{
+    "name": "refactor-circus/ringside",
+    "description": "Ring Master's per-repo plugin: spec-driven Claude Code workflow for PHP packages, with shared standards from vendor.",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "RefactorCircus\\Ringside\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Jay Fletcher",
+            "email": "5743488+jayjfletcher@users.noreply.github.com"
+        }
+    ],
+    "require": {}
+}
