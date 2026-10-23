@@ -66,3 +66,12 @@ it('falls back to counting the questions in decision.md', function () {
 
     expect($import['questions'])->toBe(2)->and($import['open_questions'])->toBe([]);
 });
+
+it('counts no questions once questions.yml is emptied to []', function () {
+    $project = boardProject();
+    writeFixture($project->root, 'docs/agent/specs/2026-10-23-1430-import/questions.yml', "[]\n");
+
+    $import = (new Board([$project]))->data()['projects'][0]['specs'][0];
+
+    expect($import['questions'])->toBe(0)->and($import['open_questions'])->toBe([]);
+});

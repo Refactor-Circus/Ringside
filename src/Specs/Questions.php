@@ -8,7 +8,8 @@ use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * The open architectural questions of one spec, kept in its questions.yml so
+ * The open architectural questions of one spec, kept in its questions.yml (`[]`
+ * once all are answered) so
  * that both /ring-master-decide and the RingMaster app can read them:
  *
  *     - id: Q-001

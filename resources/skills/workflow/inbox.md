@@ -20,7 +20,7 @@ Pass this folder's absolute path as `project_path` (a workspace root covers its 
 
 RingMaster's runner starts headless sessions with one of two arguments; follow it exactly and stop when that part is done:
 
-- `--answers`: do step 1 only.
+- `--answers`: do step 1 only, which includes running each stage the answers unblock, unattended, until it stops on its next question or the PR is open.
 - `--task=<id> --session=<name>`: the runner already claimed that task for you under that session name. Skip `next-task` and `claim-task`: call `heartbeat` for it first (its response is the task, with `ship_input` and `project.path`), then do step 2 for that task only, and don't loop.
 
 ## 1. Apply answers first
@@ -30,7 +30,7 @@ Call `pending-answers`. For each spec it lists, in that spec's `project_path`:
 - **decisions**: invoke the `ring-master-decide` skill for that spec (Skill tool) and give it these answers instead of asking: each becomes the next `D-xxx` entry (choice = `answer`, rationale = `note`, raised by = `source`, "answered in RingMaster"), comes out of `questions.yml`, and the stage named by its `source` runs again (step 6 there).
 - **escalations**: `Approve as is` → invoke `ring-master-approve` (the user accepted it in RingMaster; don't ask again). `Send back with a note` → invoke `ring-master-rework` with the note.
 
-Apply answers even when nothing is queued: they are what unblocks stopped jobs. Any stage you relaunch here also runs unattended (below).
+Apply answers even when nothing is queued: they are what unblocks stopped jobs. Relaunching the stage is part of applying them; it runs unattended (below).
 
 ## 2. Take the next task
 

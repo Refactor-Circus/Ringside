@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2
+
+- `/ring-master-decide` empties `questions.yml` to `[]` instead of deleting it (runner sessions can't run `rm`), and `/ring-master-inbox --answers` says plainly that it relaunches the stages the answers unblock.
+
 ## 0.7.1
 
 - `/ring-master-inbox` tells sessions to run one command per Bash call (a runner session's allowlist refuses compound commands whole) and lets ship skip `ringside ref` when a RingMaster task already gives its kind.
