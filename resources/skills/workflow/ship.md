@@ -14,7 +14,7 @@ Enabled stages in this package: ticket **{{stage_ticket}}**, shape **{{stage_sha
 ## 1. Work out where the job stands
 
 1. If `$ARGUMENTS` names a folder in `{{specs_dir}}/` (full or partial id), resume that spec from its `meta.yml` status (table below).
-2. Otherwise run `vendor/bin/ringside ref "$ARGUMENTS"`. It prints JSON: `{"kind": "ticket" | "idea", "provider", "ref"}`.
+2. Otherwise, unless the caller already said what it is (a RingMaster task's `kind`), run `vendor/bin/ringside ref "$ARGUMENTS"`. It prints JSON: `{"kind": "ticket" | "idea", "provider", "ref"}`.
    - **ticket**: search `{{specs_dir}}/*/meta.yml` for that ticket key. Found: resume that spec. Not found: fetch the ticket with the provider's adapter (below), then go to shaping with the ticket as the brief.
    - **idea**: with ticket stage on, run `/ring-master-ticket` first; otherwise go straight to shaping with the idea as the brief.
 3. With no arguments, run `vendor/bin/ringside specs` and offer the open specs (AskUserQuestion).

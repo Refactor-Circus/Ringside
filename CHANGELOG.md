@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+
+- `/ring-master-inbox` tells sessions to run one command per Bash call (a runner session's allowlist refuses compound commands whole) and lets ship skip `ringside ref` when a RingMaster task already gives its kind.
+
 ## 0.7.0
 
 - Stage skills can be chained: `/ring-master-ship` and `/ring-master-inbox` now invoke them with the Skill tool, which Claude Code refuses for skills marked `disable-model-invocation`. Every stage skill (ticket, shape, write, spec review, tasks, factory, implement, verify, decide, approve, rework, post-mortem, inject-standards) and ship itself are model-invocable, and their descriptions say they run only inside a Ring Master job the user started or when the user asks. `/ring-master-inbox`, discover-standards, plan-product and propose stay user-only.

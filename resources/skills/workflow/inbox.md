@@ -34,7 +34,7 @@ Apply answers even when nothing is queued: they are what unblocks stopped jobs. 
 
 ## 2. Take the next task
 
-Call `next-task`. If there is none, say the queue is empty and stop. Otherwise `claim-task`, change to the task's `project.path`, and invoke the `ring-master-ship` skill with the Skill tool, with the task's `ship_input` as its arguments, unattended:
+Call `next-task`. If there is none, say the queue is empty and stop. Otherwise `claim-task`, change to the task's `project.path`, and invoke the `ring-master-ship` skill with the Skill tool, with the task's `ship_input` as its arguments, unattended. The task's `kind` already says whether `ship_input` is an idea, a ticket or a spec, so ship doesn't need `ringside ref` to classify it:
 
 - As soon as the job's spec folder exists, call `link-spec` with its id. From then on the task follows the spec's status.
 - Call `heartbeat` when each stage starts, with the stage as `message`, so the claim stays alive and the timeline shows progress.
@@ -50,6 +50,8 @@ The user is not watching this session; RingMaster is where they answer. Wherever
 1. Make sure the spec folder exists first (create it as the stage would, with the status it would have), so the question has a home.
 2. Write each question to the spec's `questions.yml` (format in `/ring-master-decide`) with concrete options, your recommendation, the evidence in one line, and `source:` the stage to come back to: `ticket`, `shape`, `spec-review`, `approval`, `tasks` or `build`. Ask everything that stage needs in one go.
 3. Set `status: needs-decision` in `meta.yml`, call `heartbeat` with "Waiting on you: <first question>", and move on to the next task.
+
+Run one command per Bash call (no `;`, `&&` or pipes): a session started by RingMaster's runner may only run the commands it allows, and a compound command is refused as a whole.
 
 Never answer an architectural question yourself, never merge, and never push or create anything outside the repo that the stage would not (a ticket waits for its `ticket` answer before it is created).
 
