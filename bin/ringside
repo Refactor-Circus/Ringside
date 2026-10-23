@@ -1,0 +1,29 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use RefactorCircus\Ringside\Console\CheckCommand;
+use RefactorCircus\Ringside\Console\CleanupCommand;
+use RefactorCircus\Ringside\Console\DashboardCommand;
+use RefactorCircus\Ringside\Console\IndexCommand;
+use RefactorCircus\Ringside\Console\InstallCommand;
+use RefactorCircus\Ringside\Console\JobCommand;
+use RefactorCircus\Ringside\Console\MigrateCommand;
+use RefactorCircus\Ringside\Console\NewPackageCommand;
+use RefactorCircus\Ringside\Console\ProposeCommand;
+use RefactorCircus\Ringside\Console\RefCommand;
+use RefactorCircus\Ringside\Console\SpecsCommand;
+use RefactorCircus\Ringside\Console\SyncCommand;
+use RefactorCircus\Ringside\Console\WorktreesCommand;
+use Symfony\Component\Console\Application;
+
+require $GLOBALS['_composer_autoload_path'] ?? __DIR__.'/../vendor/autoload.php';
+
+$application = new Application('ringside', Composer\InstalledVersions::getPrettyVersion('refactor-circus/ringside') ?? 'dev');
+
+foreach ([new InstallCommand, new SyncCommand, new IndexCommand, new CheckCommand, new SpecsCommand, new MigrateCommand, new RefCommand, new JobCommand, new ProposeCommand, new CleanupCommand, new DashboardCommand, new WorktreesCommand, new NewPackageCommand] as $command) {
+    method_exists($application, 'addCommand') ? $application->addCommand($command) : $application->add($command);
+}
+
+exit($application->run());

@@ -1,0 +1,111 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * Claude Code hook entrypoint. Deliberately standalone: it never loads
+ * Composer's autoloader, Symfony Console or the package's code, so a hook on
+ * a non-PHP edit costs one PHP start and nothing more. Always exits 0, so a
+ * formatter problem never blocks an edit or a session.
+ *
+ *   post-edit CMD  format the edited .php file with CMD ({file} = its path)
+ *   session-start  print the standards summary and any in-progress spec
+ */
+
+declare(strict_types=1);
+
+$root = rtrim(str_replace('\\', '/', getenv('CLAUDE_PROJECT_DIR') ?: (string) getcwd()), '/');
+
+$agentDir = (static function (string $root): string {
+    $config = @file_get_contents($root.'/ring-master.yml');
+
+    return is_string($config) && preg_match('/^path:\s*[\'"]?([^\'"\s#]+)/m', $config, $matches)
+        ? trim($matches[1], '/')
+        : 'docs/agent';
+})($root);
+
+match ($argv[1] ?? '') {
+    'post-edit' => (static function (string $root, string $command): void {
+        $payload = json_decode((string) stream_get_contents(STDIN), true);
+        $file = is_array($payload) ? ($payload['tool_input']['file_path'] ?? null) : null;
+
+        if (! is_string($file) || ! str_ends_with(strtolower($file), '.php')) {
+            return;
+        }
+
+        $file = str_replace('\\', '/', $file);
+
+        if (! str_starts_with(strtolower($file), strtolower($root).'/') || str_contains(substr($file, strlen($root)), '/vendor/') || ! is_file($file)) {
+            return;
+        }
+
+        $argv = preg_split('/\s+/', trim($command)) ?: [];
+        $argv = array_map(static fn (string $part): string => str_replace('{file}', $file, $part), $argv);
+
+        if ($argv === [] || ! in_array($file, $argv, true)) {
+            $argv[] = $file;
+        }
+
+        // Run the tool from the nearest package that has it, so a workspace of
+        // several packages formats each file with that package's own config.
+        $cwd = $root;
+
+        if (str_starts_with($argv[0], 'vendor/')) {
+            $tool = null;
+
+            for ($dir = dirname($file); strlen($dir) >= strlen($root); $dir = dirname($dir)) {
+                if (is_file($dir.'/'.$argv[0])) {
+                    $tool = $dir.'/'.$argv[0];
+                    $cwd = $dir;
+
+                    break;
+                }
+
+                if ($dir === dirname($dir)) {
+                    break;
+                }
+            }
+
+            if ($tool === null) {
+                return;
+            }
+
+            $argv = [PHP_BINARY, $tool, ...array_slice($argv, 1)];
+        }
+
+        $null = PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null';
+        $process = proc_open(
+            $argv,
+            [0 => ['file', $null, 'r'], 1 => ['file', $null, 'w'], 2 => ['file', $null, 'w']],
+            $pipes,
+            $cwd,
+        );
+
+        if (is_resource($process)) {
+            proc_close($process);
+        }
+    })($root, $argv[2] ?? 'vendor/bin/pint {file}'),
+
+    'session-start' => (static function (string $root, string $agentDir): void {
+        $summary = @file_get_contents($root.'/'.$agentDir.'/standards.summary.md');
+
+        if (! is_string($summary)) {
+            echo "ringside: no standards index yet; run vendor/bin/ringside sync\n";
+
+            return;
+        }
+
+        echo trim((string) preg_replace('/^#.*\n/', '', $summary))."\n";
+
+        $next = ['building' => '/ring-master-factory', 'needs-decision' => '/ring-master-decide', 'escalated' => '/ring-master-approve or /ring-master-rework', 'in-progress' => '/ring-master-implement', 'merged' => '/ring-master-post-mortem'];
+
+        foreach (glob($root.'/'.$agentDir.'/specs/*/meta.yml') ?: [] as $meta) {
+            if (preg_match('/^status:\s*[\'"]?([a-z-]+)/m', (string) file_get_contents($meta), $status) && isset($next[$status[1]])) {
+                echo ucfirst($status[1]).': '.$agentDir.'/specs/'.basename(dirname($meta)).'/ (next: '.$next[$status[1]].")\n";
+            }
+        }
+    })($root, $agentDir),
+
+    default => fwrite(STDERR, "usage: ringside-hook post-edit [command] | session-start\n"),
+};
+
+exit(0);

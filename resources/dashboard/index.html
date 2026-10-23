@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ring Master jobs</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --ink: #1d1d1b; --quiet: #6b6b66; --line: #e3e2dd;
+    --accent: #2f6fdf; --accent-soft: #e7effc; --good: #2e8b57; --good-soft: #e5f4ea;
+    --warn: #b7791f; --warn-soft: #fbf0dc; --bad: #c2413a; --bad-soft: #fbe9e7; --chip: #efeee9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1f1f1d; --ink: #ecebe6; --quiet: #9d9c95; --line: #33322f;
+      --accent: #6f9ff5; --accent-soft: #1f2b40; --good: #5dbb84; --good-soft: #1b3125;
+      --warn: #e0a84c; --warn-soft: #3a2e19; --bad: #ee7b72; --bad-soft: #3d201d; --chip: #2a2a27;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filters button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  .filters button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .meta { margin-left: auto; color: var(--quiet); font-size: 12.5px; display: flex; gap: 12px; align-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); display: inline-block; }
+  .dot.stale { background: var(--bad); }
+  main { display: grid; grid-template-columns: repeat(6, minmax(230px, 1fr)); gap: 12px; padding: 16px 20px 40px; overflow-x: auto; }
+  .column h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--quiet); margin: 0 0 8px; display: flex; justify-content: space-between; }
+  .column.attention h2 { color: var(--warn); }
+  .cards { display: flex; flex-direction: column; gap: 8px; min-height: 40px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; }
+  .card:hover, .card:focus-visible { border-color: var(--accent); outline: none; }
+  .card.attention { border-color: var(--warn); box-shadow: inset 3px 0 0 var(--warn); }
+  .card .title { font-weight: 600; margin-bottom: 4px; }
+  .card .sub { color: var(--quiet); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .chip { display: inline-block; border-radius: 6px; padding: 1px 6px; font-size: 11.5px; background: var(--chip); color: var(--quiet); }
+  .chip.pass { background: var(--good-soft); color: var(--good); }
+  .chip.changes { background: var(--warn-soft); color: var(--warn); }
+  .chip.status-needs-decision, .chip.status-escalated { background: var(--warn-soft); color: var(--warn); }
+  .chip.status-building { background: var(--accent-soft); color: var(--accent); }
+  .chip.status-in-review { background: var(--good-soft); color: var(--good); }
+  .reports { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  .bar { height: 4px; background: var(--chip); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--accent); }
+  .live { color: var(--accent); }
+  .ask { color: var(--warn); font-weight: 600; }
+  .empty { color: var(--quiet); font-size: 12.5px; padding: 6px 2px; }
+  aside { position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 100vw); background: var(--panel); border-left: 1px solid var(--line); transform: translateX(100%); transition: transform .18s ease; z-index: 3; display: flex; flex-direction: column; }
+  aside.open { transform: none; }
+  aside .head { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: flex-start; }
+  aside .head h3 { margin: 0; font-size: 15px; }
+  aside .head .close { margin-left: auto; border: 0; background: none; color: var(--quiet); font-size: 20px; cursor: pointer; }
+  aside nav { display: flex; gap: 4px; flex-wrap: wrap; padding: 10px 18px; border-bottom: 1px solid var(--line); }
+  aside nav button { border: 1px solid var(--line); background: none; color: var(--ink); border-radius: 6px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+  aside nav button[aria-current="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  aside .body { padding: 16px 20px 40px; overflow-y: auto; }
+  .md h1 { font-size: 18px; } .md h2 { font-size: 15px; margin-top: 22px; } .md h3 { font-size: 14px; }
+  .md pre { background: var(--chip); padding: 10px 12px; border-radius: 8px; overflow-x: auto; font-size: 12.5px; }
+  .md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .md table { border-collapse: collapse; font-size: 13px; margin: 10px 0; display: block; overflow-x: auto; }
+  .md th, .md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+  a { color: var(--accent); }
+  .md li > ul, .md li > ol { margin: 2px 0 4px; }
+  @media (max-width: 640px) { main { grid-template-columns: repeat(6, 82vw); } header { padding: 12px 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ring Master jobs</h1>
+  <div class="filters" id="filters" role="group" aria-label="Packages"></div>
+  <div class="meta"><span class="dot" id="dot"></span><span id="updated">connecting…</span></div>
+</header>
+<main id="board" aria-live="polite"></main>
+<aside id="drawer" aria-hidden="true">
+  <div class="head"><div><h3 id="d-title"></h3><div class="sub" id="d-sub"></div></div><button class="close" id="d-close" aria-label="Close">×</button></div>
+  <nav id="d-files" aria-label="Files"></nav>
+  <div class="body md" id="d-body"></div>
+</aside>
+<script>
+const ATTENTION = new Set(['needs-decision', 'escalated'])
+const state = { data: null, filter: null, open: null, file: null, lastOk: 0 }
+const $ = id => document.getElementById(id)
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+const ago = t => { const s = Math.max(0, Math.round(Date.now() / 1000 - t)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago` }
+
+async function poll() {
+  try {
+    const res = await fetch('/api/board', { cache: 'no-store' })
+    state.data = await res.json()
+    state.lastOk = Date.now()
+    render()
+    if (state.open) {
+      const updated = current()?.updated
+      renderDrawer(updated !== state.openUpdated)
+      state.openUpdated = updated
+    }
+  } catch (e) { /* keep the last board; the dot turns red */ }
+  $('dot').classList.toggle('stale', Date.now() - state.lastOk > 6000)
+  $('updated').textContent = state.lastOk ? `updated ${ago(state.lastOk / 1000)}` : 'cannot reach the dashboard server'
+}
+
+function specs() {
+  return state.data.projects.flatMap(p => (state.filter === null || state.filter === p.id) ? p.specs.map(s => ({ ...s, project: p.id, projectName: p.name })) : [])
+}
+
+function render() {
+  const projects = state.data.projects
+  $('filters').innerHTML = projects.length > 1
+    ? [`<button aria-pressed="${state.filter === null}" data-f="">All</button>`, ...projects.map(p => `<button aria-pressed="${state.filter === p.id}" data-f="${p.id}">${esc(p.name.split('/').pop())}</button>`)].join('')
+    : `<span class="chip">${esc(projects[0]?.name ?? 'no project')}</span>`
+  const all = specs()
+  $('board').innerHTML = state.data.columns.map(col => {
+    const cards = all.filter(s => s.column === col)
+    return `<section class="column ${col === 'Needs you' ? 'attention' : ''}"><h2><span>${esc(col)}</span><span>${cards.length}</span></h2><div class="cards">${cards.length ? cards.map(card).join('') : '<div class="empty">—</div>'}</div></section>`
+  }).join('')
+}
+
+function card(s) {
+  const last = s.rounds[s.rounds.length - 1]
+  const live = Date.now() / 1000 - s.updated < 30 && s.status === 'building'
+  const pct = s.tasks.total ? Math.round(100 * s.tasks.done / s.tasks.total) : 0
+  return `<button class="card ${ATTENTION.has(s.status) ? 'attention' : ''}" data-p="${s.project}" data-s="${esc(s.dir)}">
+    <div class="title">${esc(s.title)}</div>
+    <div class="sub">
+      <span class="chip status-${esc(s.status)}">${esc(s.status)}</span>
+      ${s.ticket ? `<span>${esc(s.ticket.key ?? '')}</span>` : ''}
+      ${state.data.projects.length > 1 && state.filter === null ? `<span>${esc(s.projectName.split('/').pop())}</span>` : ''}
+      ${s.packages && s.packages.length ? `<span title="packages this job changes">${s.packages.map(esc).join(' + ')}</span>` : ''}
+      ${last ? `<span>round ${last.n}</span>` : ''}
+      ${s.questions ? `<span class="ask">${s.questions} question${s.questions === 1 ? '' : 's'} for you</span>` : ''}
+      ${s.decisions ? `<span>${s.decisions} decided</span>` : ''}
+      ${live ? '<span class="live">● live</span>' : `<span>${ago(s.updated)}</span>`}
+    </div>
+    ${last ? `<div class="reports">${last.reports.map(r => `<span class="chip ${r.verdict ?? ''}" title="${esc(r.name)}: ${esc(r.verdict ?? 'no verdict yet')}">${esc(r.name)}</span>`).join('')}</div>` : ''}
+    ${s.tasks.total ? `<div class="bar" title="${s.tasks.done}/${s.tasks.total} tasks"><span style="width:${pct}%"></span></div>` : ''}
+  </button>`
+}
+
+function current() {
+  return specs().concat(state.data.projects.flatMap(p => p.specs.map(s => ({ ...s, project: p.id, projectName: p.name }))))
+    .find(s => s.project === state.open.project && s.dir === state.open.dir)
+}
+
+async function renderDrawer(loadFile = true) {
+  const s = current()
+  if (!s) return closeDrawer()
+  $('d-title').textContent = s.title
+  $('d-sub').innerHTML = `<span class="chip status-${esc(s.status)}">${esc(s.status)}</span> ${s.ticket?.url ? `<a href="${esc(s.ticket.url)}" target="_blank" rel="noopener">${esc(s.ticket.key)}</a>` : esc(s.ticket?.key ?? '')} ${s.pr?.url ? `<a href="${esc(s.pr.url)}" target="_blank" rel="noopener">PR</a>` : ''} <span>${esc(s.id)}</span>`
+  const files = [...s.files, ...s.rounds.flatMap(r => r.reports.map(x => x.path))]
+  if (!state.file || !files.includes(state.file)) state.file = files.find(f => f.endsWith('/decision.md')) ?? files.find(f => f.endsWith('/spec.md')) ?? files[0]
+  $('d-files').innerHTML = files.map(f => `<button data-file="${esc(f)}" aria-current="${f === state.file}">${esc(f.slice(s.dir.length + 1))}</button>`).join('')
+  if (loadFile && state.file) {
+    const res = await fetch(`/api/file?project=${s.project}&path=${encodeURIComponent(state.file)}`, { cache: 'no-store' })
+    $('d-body').innerHTML = res.ok ? markdown(await res.text(), state.file) : '<p class="empty">This file is gone.</p>'
+  }
+}
+
+function openDrawer(project, dir) {
+  state.open = { project: Number(project), dir }
+  state.file = null
+  state.openUpdated = null
+  history.replaceState(null, '', `#job=${state.open.project}:${encodeURIComponent(dir)}`)
+  $('drawer').classList.add('open')
+  $('drawer').setAttribute('aria-hidden', 'false')
+  renderDrawer()
+}
+function closeDrawer() {
+  state.open = null
+  history.replaceState(null, '', location.pathname)
+  $('drawer').classList.remove('open')
+  $('drawer').setAttribute('aria-hidden', 'true')
+}
+
+// A small markdown renderer: headings, lists, tables, fenced code, inline code, bold, links.
+function markdown(text, name) {
+  if (/\.ya?ml$/.test(name)) return `<pre><code>${esc(text)}</code></pre>`
+  const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  const out = []
+  const lines = text.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (line.startsWith('```')) {
+      const code = []
+      while (++i < lines.length && !lines[i].startsWith('```')) code.push(lines[i])
+      out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`)
+    } else if (/^#{1,4} /.test(line)) {
+      const n = line.match(/^#+/)[0].length
+      out.push(`<h${n}>${inline(line.slice(n + 1))}</h${n}>`)
+    } else if (/^\s*\|/.test(line) && /^\s*\|[\s|:-]+\|\s*$/.test(lines[i + 1] ?? '')) {
+      const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => inline(c.trim()))
+      const head = cells(line)
+      i++
+      const rows = []
+      while (i + 1 < lines.length && /^\s*\|/.test(lines[i + 1])) rows.push(cells(lines[++i]))
+      out.push(`<table><thead><tr>${head.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`)
+    } else if (/^\s*([-*]|\d+\.) /.test(line)) {
+      // Top-level items; anything indented under an item becomes its nested list.
+      const item = l => inline(l.replace(/^\s*([-*]|\d+\.) (\[[ xX]\] )?/, (m, b, box) => box ? (/x/i.test(box) ? '☑ ' : '☐ ') : ''))
+      const ordered = /^\s*\d+\./.test(line)
+      const base = line.match(/^\s*/)[0].length
+      const items = []
+      while (i < lines.length && /^\s*([-*]|\d+\.) /.test(lines[i])) {
+        const indent = lines[i].match(/^\s*/)[0].length
+        if (indent > base && items.length) {
+          const last = items[items.length - 1]
+          last.children.push({ ordered: /^\s*\d+\./.test(lines[i]), text: item(lines[i]) })
+        } else {
+          items.push({ text: item(lines[i]), children: [] })
+        }
+        i++
+      }
+      i--
+      const sub = c => c.length ? `<${c[0].ordered ? 'ol' : 'ul'}>${c.map(x => `<li>${x.text}</li>`).join('')}</${c[0].ordered ? 'ol' : 'ul'}>` : ''
+      out.push(`<${ordered ? 'ol' : 'ul'}>${items.map(x => `<li>${x.text}${sub(x.children)}</li>`).join('')}</${ordered ? 'ol' : 'ul'}>`)
+    } else if (line.trim() !== '') {
+      out.push(`<p>${inline(line)}</p>`)
+    }
+  }
+  return out.join('\n')
+}
+
+document.addEventListener('click', e => {
+  const f = e.target.closest('[data-f]')
+  if (f) { state.filter = f.dataset.f === '' ? null : Number(f.dataset.f); render(); return }
+  const c = e.target.closest('.card')
+  if (c) { openDrawer(c.dataset.p, c.dataset.s); return }
+  const file = e.target.closest('[data-file]')
+  if (file) { state.file = file.dataset.file; renderDrawer(); return }
+  if (e.target.id === 'd-close') closeDrawer()
+})
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer() })
+
+// A #job=<project>:<spec dir> link opens that job's drawer.
+const linked = location.hash.match(/^#job=(\d+):(.+)$/)
+poll().then(() => { if (linked) openDrawer(linked[1], decodeURIComponent(linked[2])) })
+setInterval(poll, 2000)
+</script>
+</body>
+</html>
