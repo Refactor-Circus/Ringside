@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.4
+
+- `/ring-master-ship` resumes a `building` spec (a factory run that stopped part-way) by running the factory again; ticked task groups are skipped. RingMaster resumes such jobs once their worktree has been quiet for a while.
+
 ## 0.7.3
 
 - `/ring-master-ship` runs every enabled stage, however small the job looks (a test session skipped spec review on its own judgement).

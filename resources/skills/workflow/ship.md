@@ -25,6 +25,7 @@ Enabled stages in this package: ticket **{{stage_ticket}}**, shape **{{stage_sha
 | `shaping` | finish shaping, then `/ring-master-write-spec` |
 | `written` | `/ring-master-spec-review` (or set `approved` when spec review is off and the user confirms) |
 | `approved` | `/ring-master-create-tasks` if `tasks.md` is missing, then `/ring-master-factory` |
+| `building` | the factory stopped mid-run (a resumed job): `/ring-master-factory` again; finished groups stay ticked, so it carries on where it stopped |
 | `needs-decision` | `/ring-master-decide` |
 | `escalated` | show the reasons; offer `/ring-master-approve` or `/ring-master-rework` |
 | `in-review` | check the PR with the host adapter's `pr_status`; merged → set `merged` |
