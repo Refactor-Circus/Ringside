@@ -120,7 +120,6 @@ final readonly class Config
                 'session_start_summary' => true,
             ],
             'pint' => ['allow_diff' => false],
-            'dashboard' => ['port' => 8765, 'projects' => []],
             'workspace' => ['packages' => [], 'jobs_dir' => '.ring-master/jobs'],
             'new_package' => [
                 'type' => 'laravel',                 // laravel: `laravel package`; php: `composer init`
@@ -255,7 +254,9 @@ final readonly class Config
         $parsed = $this->raw === '' ? [] : Yaml::parse($this->raw);
 
         foreach (array_keys(is_array($parsed) ? $parsed : []) as $key) {
-            if (! array_key_exists((string) $key, self::defaults())) {
+            if ($key === 'dashboard') {
+                $problems[] = 'ring-master.yml: `dashboard` was removed in 0.2 (the RingMaster app shows the board); delete it.';
+            } elseif (! array_key_exists((string) $key, self::defaults())) {
                 $problems[] = "ring-master.yml: unknown key `{$key}`.";
             }
         }

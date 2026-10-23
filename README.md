@@ -2,7 +2,7 @@
 
 Ringside is the per-repo half of **Ring Master**: a spec-driven Claude Code workflow for PHP packages and projects: idea or ticket → spec → review → build → review rounds and gates → pull request → post-mortem → standards discovery. Architectural decisions are always yours; everything below that is fixed automatically.
 
-Ringside is a Composer plugin and works on its own. The optional [Ring Master](https://github.com/Refactor-Circus/RingMaster) hub adds a board, a task queue and an inbox for the questions that need you. Shared standards come from Composer packages and are read from `vendor/`, never copied. Specs, product docs and your project's own standards live in your repo under `docs/agent/`.
+Ringside is a Composer plugin and works on its own. The optional [RingMaster](https://github.com/Refactor-Circus/RingMaster) app adds a live board, a task queue and an inbox for the questions that need you. Shared standards come from Composer packages and are read from `vendor/`, never copied. Specs, product docs and your project's own standards live in your repo under `docs/agent/`.
 
 ## Install
 
@@ -61,15 +61,6 @@ workspace:
 A spec there can change several packages: each task group names its package (`package: Atrium`). The factory gives the job its own folder (`.ring-master/jobs/<spec>/`) with a worktree on the job branch for every package it changes and a link to the main checkout of every other one, so a package's local path repositories (`../Keystone`) resolve to the job's versions. Each package is built, tested and gated with its own commands, in dependency order, and the job ends with one PR per package. `ringside worktrees <spec> [--setup|--remove]` manages the job folder.
 
 A spec can also create a package. List it under `new_packages` in the spec's `meta.yml` (name, type, features, dependencies); spec review asks you to settle each of those, since a new package is an architectural decision. The factory then runs `ringside new-package`, which scaffolds a Laravel package with the Laravel installer's `laravel package` command (or a plain PHP one with `composer init`), commits it on `main` and adds it to the workspace, before building. Publishing its repository stays your step.
-
-## Dashboard
-
-```bash
-vendor/bin/ringside dashboard                 # http://127.0.0.1:8765
-vendor/bin/ringside dashboard --project ../Atrium --project ../Cortex
-```
-
-A live board of every job, read straight from the spec folders: one card per job in its stage column (Ticket, Spec, Building, Needs you, In review, Done), with its ticket, PR, task progress, the latest round's verdict per reviewer, and how many questions wait for you. Click a card to read its spec, decisions and every round's reports. The page polls every 2 seconds, so a factory run shows up as its agents write. List the packages you always want on the board in `dashboard.projects`. The server binds to 127.0.0.1 and serves only markdown and YAML inside spec folders.
 
 ## Standards
 
@@ -140,7 +131,6 @@ discovery:
 hooks:
   post_edit_format: { enabled: true, command: 'vendor/bin/pint {file}' }
   session_start_summary: true
-dashboard: { port: 8765, projects: [] }   # extra package roots for the board, e.g. ../Atrium
 workspace: { packages: [], jobs_dir: .ring-master/jobs }   # set packages to work across several from a parent folder
 new_package: { type: laravel, vendor: null, namespace: null, features: [config], laravel_bin: laravel }
 ```
@@ -164,7 +154,6 @@ Built-in adapters: `github` (tracker and host, via `gh`), `jira` (tracker, via t
 | `index --accept <key>` | record a reviewed override |
 | `propose <key> --repo=<path>` | commit a global standards proposal on a branch of the global package |
 | `cleanup [--remove]` | list or remove finished job worktrees |
-| `dashboard [--port] [--project=<path>]...` | serve the live job board on 127.0.0.1 |
 | `worktrees <spec> [--setup\|--remove]` | workspaces: create or remove a job's folder of package worktrees |
 | `new-package <Name> [--type] [--feature=...] [--dry-run]` | workspaces: scaffold, git init and register a new package |
 | `migrate [--dry-run]` | move an Agent OS install into `docs/agent/` |

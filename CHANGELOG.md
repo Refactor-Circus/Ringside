@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- Removed `ringside dashboard` and the `dashboard` config key: the RingMaster app is the board now. `check` names the key if it is still in `ring-master.yml`.
+- `Board` (every job's state read from the spec folders) moved to `RefactorCircus\Ringside\Specs\Board` for the app to import from.
+- `new-package` adds the package to `workspace.packages` only.
+
 ## 0.1.0
 
 - First release as Ringside, Ring Master's per-repo plugin; continues agent-kit 0.5.0.

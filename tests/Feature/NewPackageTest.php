@@ -9,7 +9,7 @@ use RefactorCircus\Ringside\Shell;
 
 function scaffoldWorkspace(string $config = ''): Project
 {
-    $root = fixtureProject(['ring-master.yml' => "workspace:\n  packages: [Keystone]\n\ndashboard:\n  projects: [Keystone]   # keep this comment\n".$config])->root;
+    $root = fixtureProject(['ring-master.yml' => "workspace:\n  packages: [Keystone]   # keep this comment\n".$config])->root;
     writeFixture($root, 'Keystone/composer.json', json_encode(['name' => 'acme/keystone']));
     Shell::run(['git', 'config', 'user.name', 'Test Author'], $root);
     Shell::run(['git', 'config', 'user.email', 'author@example.com'], $root);
@@ -61,7 +61,7 @@ it('creates a laravel package with the laravel installer, commits it and adds it
     expect((string) $project->read('Ledger/args.txt'))->toContain("package\nLedger\n--no-interaction\n--package-name=acme/ledger")
         ->and(Shell::run(['git', 'log', '--oneline'], $project->path('Ledger'))[1])->toContain('Scaffold acme/ledger')
         ->and(Shell::run(['git', 'branch', '--show-current'], $project->path('Ledger'))[1])->toBe('main')
-        ->and((string) $project->read('ring-master.yml'))->toContain('packages: [Keystone, Ledger]', 'projects: [Keystone, Ledger]   # keep this comment')
+        ->and((string) $project->read('ring-master.yml'))->toContain('packages: [Keystone, Ledger]   # keep this comment')
         ->and((new Project($project->root))->config->list('workspace.packages'))->toBe(['Keystone', 'Ledger']);
 });
 

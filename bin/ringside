@@ -5,7 +5,6 @@ declare(strict_types=1);
 
 use RefactorCircus\Ringside\Console\CheckCommand;
 use RefactorCircus\Ringside\Console\CleanupCommand;
-use RefactorCircus\Ringside\Console\DashboardCommand;
 use RefactorCircus\Ringside\Console\IndexCommand;
 use RefactorCircus\Ringside\Console\InstallCommand;
 use RefactorCircus\Ringside\Console\JobCommand;
@@ -22,7 +21,7 @@ require $GLOBALS['_composer_autoload_path'] ?? __DIR__.'/../vendor/autoload.php'
 
 $application = new Application('ringside', Composer\InstalledVersions::getPrettyVersion('refactor-circus/ringside') ?? 'dev');
 
-foreach ([new InstallCommand, new SyncCommand, new IndexCommand, new CheckCommand, new SpecsCommand, new MigrateCommand, new RefCommand, new JobCommand, new ProposeCommand, new CleanupCommand, new DashboardCommand, new WorktreesCommand, new NewPackageCommand] as $command) {
+foreach ([new InstallCommand, new SyncCommand, new IndexCommand, new CheckCommand, new SpecsCommand, new MigrateCommand, new RefCommand, new JobCommand, new ProposeCommand, new CleanupCommand, new WorktreesCommand, new NewPackageCommand] as $command) {
     method_exists($application, 'addCommand') ? $application->addCommand($command) : $application->add($command);
 }
 

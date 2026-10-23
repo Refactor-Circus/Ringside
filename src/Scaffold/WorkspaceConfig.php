@@ -9,7 +9,7 @@ use RefactorCircus\Ringside\Project;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Adds a package to `workspace.packages` and `dashboard.projects` in
+ * Adds a package to `workspace.packages` in
  * ring-master.yml, keeping the file's comments when the lists are written
  * inline (`packages: [A, B]`).
  */
@@ -19,13 +19,7 @@ final class WorkspaceConfig
 
     public function addPackage(string $package): void
     {
-        $yaml = (string) $this->root->read(Config::FILE);
-
-        foreach (['workspace' => 'packages', 'dashboard' => 'projects'] as $section => $key) {
-            $yaml = $this->append($yaml, $section, $key, $package);
-        }
-
-        $this->root->write(Config::FILE, $yaml);
+        $this->root->write(Config::FILE, $this->append((string) $this->root->read(Config::FILE), 'workspace', 'packages', $package));
     }
 
     private function append(string $yaml, string $section, string $key, string $package): string

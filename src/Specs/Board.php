@@ -2,16 +2,14 @@
 
 declare(strict_types=1);
 
-namespace RefactorCircus\Ringside\Dashboard;
+namespace RefactorCircus\Ringside\Specs;
 
 use RefactorCircus\Ringside\Project;
-use RefactorCircus\Ringside\Specs\Decisions;
-use RefactorCircus\Ringside\Specs\SpecRepository;
-use RefactorCircus\Ringside\Specs\TaskParser;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Everything the dashboard shows, read from the spec folders on disk. Agents
+ * Every job's state, read from the spec folders on disk (the RingMaster app
+ * imports from this). Agents
  * write their reports as they go, so polling this shows a run as it happens.
  */
 final class Board
@@ -56,7 +54,7 @@ final class Board
 
     /**
      * A markdown or YAML file inside one of the project's spec folders, or null
-     * for anything else: the dashboard never serves files outside them.
+     * for anything else: never reads files outside them.
      */
     public function file(int $project, string $relative): ?string
     {
