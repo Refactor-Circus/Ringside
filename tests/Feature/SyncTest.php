@@ -11,7 +11,7 @@ it('writes the index, summary, skills, subagent, hooks and managed block', funct
     $result = (new Sync)->run($project);
 
     expect($result->written)->toContain('docs/agent/standards.index.yml', 'docs/agent/standards.summary.md', '.claude/settings.json', 'AGENTS.md')
-        ->and(glob($project->path('.claude/skills/ring-master-*/SKILL.md')))->toHaveCount(19)
+        ->and(glob($project->path('.claude/skills/ring-master-*/SKILL.md')))->toHaveCount(20)
         ->and($project->read('.claude/skills/ring-master-std-testing/SKILL.md'))->toContain("paths:\n  - 'tests/**'", 'vendor/refactor-circus/standards/standards/testing/pest-style.md')
         ->and($project->read('.claude/skills/ring-master-shape-spec/SKILL.md'))->toContain('disable-model-invocation: true', 'docs/agent/specs/')->not->toContain('{{')
         ->and($project->read('.claude/agents/ring-master-implementer.md'))->toContain('skills: [ring-master-std-architecture, ring-master-std-testing]', 'maxTurns: 40')
@@ -130,11 +130,11 @@ it('names the verify command in the session summary', function () {
     expect($project->read('docs/agent/standards.summary.md'))->toContain('Done means `composer test` passes.');
 });
 
-it('renders /ring-master-inbox only when a RingMaster app is configured, pointing at it', function () {
+it('renders /ring-master-inbox everywhere, pointing at the RingMaster app once one is configured', function () {
     $project = fixtureProject();
     (new Sync)->run($project);
 
-    expect($project->exists('.claude/skills/ring-master-inbox/SKILL.md'))->toBeFalse()
+    expect((string) $project->read('.claude/skills/ring-master-inbox/SKILL.md'))->toContain('php <path to RingMaster>/artisan mcp:start ring-master')
         ->and((string) $project->read(Sync::summaryPath($project)))->not->toContain('ring-master-app');
 
     $project = withConfig($project, "board: { app: /opt/ring-master/ }\n");

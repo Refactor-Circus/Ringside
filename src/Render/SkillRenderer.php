@@ -155,7 +155,6 @@ final class SkillRenderer
     private function conditionalSkillEnabled(Project $project, string $name): bool
     {
         return match ($name) {
-            'ring-master-inbox' => Template::boardApp($project) !== null,
             'ring-master-post-mortem' => $project->config->string('stages.post_mortem') !== 'off',
             'ring-master-propose' => $project->config->string('stages.post_mortem') !== 'off' && $project->config->globalStandards() !== [],
             default => true,

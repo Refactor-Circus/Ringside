@@ -2,19 +2,26 @@
 name: ring-master-inbox
 description: Work through RingMaster's queue: apply the user's answers so stopped jobs resume, then claim queued tasks and ship them, sending every question to RingMaster instead of asking here.
 disable-model-invocation: true
-argument-hint: "[--once]"
+argument-hint: "[--once | --answers | --task=<id> --session=<name>]"
 ---
 {{marker}}
 
 # Inbox
 
-RingMaster (`{{board_app}}`) holds the user's queue and the answers they gave there. You reach it through its MCP server, `ring-master`: `queue-status`, `pending-answers`, `next-task`, `claim-task`, `heartbeat`, `link-spec`, `release-task`. If those tools are not available, stop and tell the user to add the server once:
+RingMaster holds the user's queue and the answers they gave there. You reach it through its MCP server, `ring-master`: `queue-status`, `pending-answers`, `next-task`, `claim-task`, `heartbeat`, `link-spec`, `release-task`. If those tools are not available, stop and tell the user to add the server once:
 
 ```bash
 claude mcp add --scope user ring-master -- php {{board_app}}/artisan mcp:start ring-master
 ```
 
+(and set `board: { app: <that folder> }` in `ring-master.yml` for the session summary).
+
 Pass this folder's absolute path as `project_path` (a workspace root covers its packages), and use one session name on every call: the folder name and a short random suffix.
+
+RingMaster's runner starts headless sessions with one of two arguments; follow it exactly and stop when that part is done:
+
+- `--answers`: do step 1 only.
+- `--task=<id> --session=<name>`: the runner already claimed that task for you under that session name. Skip `next-task` and `claim-task`: call `heartbeat` for it first (its response is the task, with `ship_input` and `project.path`), then do step 2 for that task only, and don't loop.
 
 ## 1. Apply answers first
 

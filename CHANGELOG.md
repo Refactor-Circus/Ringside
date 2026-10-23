@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0
+
+- `/ring-master-inbox` exists in every project (sessions RingMaster's runner starts in a package need it there) and takes the runner's arguments: `--answers` (apply answers only) and `--task=<id> --session=<name>` (ship that one already-claimed task).
+
 ## 0.5.0
 
 - `board.app` points a project at the RingMaster app. Sessions then start with RingMaster's one-line queue summary, and `/ring-master-inbox` applies the answers given there, then claims queued tasks over RingMaster's MCP server and ships them unattended: every question a stage would ask goes to `questions.yml` with the stage to return to as `source` (`ticket`, `shape`, `spec-review`, `approval`, `tasks`, `build`).

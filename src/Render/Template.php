@@ -80,7 +80,7 @@ final class Template
         $globals = array_map(static fn (array $entry): string => '`'.$entry['package'].'`', $config->globalStandards());
 
         $base = [
-            'board_app' => self::boardApp($project) ?? '',
+            'board_app' => self::boardApp($project) ?? '<path to RingMaster>',
             'version' => self::version($project),
             'agent_dir' => $project->agentPath(),
             'standards_dir' => $project->agentPath('standards'),
