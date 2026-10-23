@@ -1,6 +1,6 @@
 ---
 name: ring-master-approve
-description: Accept an escalated ringside job as it stands and open its PR.
+description: Accept an escalated Ring Master job as it stands and open its PR.
 disable-model-invocation: true
 argument-hint: "[spec id]"
 ---

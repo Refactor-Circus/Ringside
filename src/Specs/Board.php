@@ -114,6 +114,8 @@ final class Board
         $tasks = array_merge(...array_map(static fn (array $group): array => $group['tasks'], $groups ?: [['tasks' => []]]));
         $rounds = $this->rounds($project, $dir);
         $decisionFile = (string) $project->read($dir.'/decision.md');
+        $questionsFile = $project->read($dir.'/'.Questions::FILE);
+        $questions = $questionsFile === null ? [] : (new Questions)->parse($questionsFile);
 
         return [
             'id' => basename($dir),
@@ -130,7 +132,8 @@ final class Board
             'rounds' => $rounds,
             'decisions' => count((new Decisions)->parse((string) $project->read($dir.'/decisions.md'))),
             'decision' => preg_match('/^\W*(APPROVED|NEEDS-DECISION|ESCALATED)\b/mi', $decisionFile, $m) ? strtolower($m[1]) : null,
-            'questions' => $status === 'needs-decision' ? (int) preg_match_all('/^\d+\.\s+\*\*/m', $decisionFile) : 0,
+            'questions' => $questionsFile !== null ? count($questions) : ($status === 'needs-decision' ? (int) preg_match_all('/^\d+\.\s+\*\*/m', $decisionFile) : 0),
+            'open_questions' => $questions,
             'files' => $this->files($project, $dir),
             'updated' => $this->updated($project, $dir),
         ];
@@ -173,7 +176,7 @@ final class Board
     {
         $files = [];
 
-        foreach (['meta.yml', 'shape.md', 'spec.md', 'spec-review.md', 'decisions.md', 'standards.md', 'tasks.md', 'build.md', 'decision.md', 'verification.md', 'post-mortem.md', 'references.md'] as $name) {
+        foreach (['meta.yml', 'shape.md', 'spec.md', 'spec-review.md', 'decisions.md', 'standards.md', 'tasks.md', 'build.md', 'decision.md', 'questions.yml', 'verification.md', 'post-mortem.md', 'references.md'] as $name) {
             if ($project->exists($dir.'/'.$name)) {
                 $files[] = $dir.'/'.$name;
             }

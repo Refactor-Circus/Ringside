@@ -10,11 +10,22 @@ argument-hint: "[spec id]"
 
 Architectural decisions belong to the user. Never answer them yourself.
 
-1. Pick the spec: `$ARGUMENTS`, or the newest `needs-decision` spec. Read the open questions from `decision.md`.
+1. Pick the spec: `$ARGUMENTS`, or the newest `needs-decision` spec. Read the open questions from `questions.yml` (older specs: from `decision.md`).
 2. For each question, use AskUserQuestion: the question, each option (the agents' recommendation first, marked recommended), and the evidence in one line. The user may answer with their own option.
-3. Append each answer to `decisions.md` as the next `D-xxx` entry (question, choice, rationale, date, raised by). Never edit earlier entries.
+3. Append each answer to `decisions.md` as the next `D-xxx` entry (question, choice, rationale, date, raised by). Never edit earlier entries. Then remove the answered entries from `questions.yml`, and delete the file once it is empty.
 4. If an answer changes scope, add a dated "Addendum" section to `spec.md` and, if needed, new tasks to `tasks.md`.
 5. Comment the decisions on the ticket (tracker adapter `comment`).
-6. Relaunch: a question from spec review goes back to `/ring-master-spec-review`; from the build or review, set `status: approved` and run `/ring-master-factory`. Finished task groups stay ticked, so the build resumes where it stopped.
+6. Relaunch by each question's `source`: `spec-review` goes back to `/ring-master-spec-review` (status `written`); `build` sets `status: approved` and runs `/ring-master-factory`. Finished task groups stay ticked, so the build resumes where it stopped.
+
+`questions.yml` holds the open questions so that RingMaster can show them too:
+
+```yaml
+- id: Q-001                      # Q-001, Q-002, ... in the order raised
+  question: One row per file or per line?
+  options: [Per file, Per line]
+  recommendation: Per line
+  evidence: src/Import.php:40    # where it came up, one line
+  source: build                  # build | spec-review
+```
 
 {{tracker_adapters}}

@@ -48,3 +48,21 @@ it('serves only markdown and yaml inside the spec folders', function () {
         ->and($board->file(0, 'docs/agent/specs/2026-10-23-1430-import/../../../ring-master.yml'))->toBeNull()
         ->and($board->file(1, 'docs/agent/specs/2026-10-23-1430-import/spec.md'))->toBeNull();
 });
+
+it('reads open questions from questions.yml, with their options and recommendation', function () {
+    $project = boardProject();
+    writeFixture($project->root, 'docs/agent/specs/2026-10-23-1430-import/questions.yml', "- id: Q-001\n  question: One row per file or per line?\n  options: [Per file, Per line]\n  recommendation: Per line\n  source: build\n- question: '  Sync or queued?  '\n- not a question\n");
+
+    $import = (new Board([$project]))->data()['projects'][0]['specs'][0];
+
+    expect($import['questions'])->toBe(2)
+        ->and($import['open_questions'][0])->toBe(['id' => 'Q-001', 'question' => 'One row per file or per line?', 'options' => ['Per file', 'Per line'], 'recommendation' => 'Per line', 'evidence' => null, 'source' => 'build'])
+        ->and($import['open_questions'][1])->toMatchArray(['id' => 'Q-002', 'question' => 'Sync or queued?', 'options' => []])
+        ->and($import['files'])->toContain('docs/agent/specs/2026-10-23-1430-import/questions.yml');
+});
+
+it('falls back to counting the questions in decision.md', function () {
+    $import = (new Board([boardProject()]))->data()['projects'][0]['specs'][0];
+
+    expect($import['questions'])->toBe(2)->and($import['open_questions'])->toBe([]);
+});

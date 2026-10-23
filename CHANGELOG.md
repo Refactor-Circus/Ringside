@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- Open architectural questions live in the spec's `questions.yml` (id, question, options, recommendation, evidence, source), written by the factory and spec review and cleared by `/ring-master-decide`, so RingMaster can show and answer them. Spec review now hands its questions to `/ring-master-decide` too.
+- `Board` reads `questions.yml` (`open_questions`, and `questions` counts it); older specs still count the questions in `decision.md`.
+
 ## 0.3.0
 
 - Requires PHP 8.5.
