@@ -8,9 +8,9 @@ use RefactorCircus\Ringside\Project;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Every job's state, read from the spec folders on disk (the RingMaster app
- * imports from this). Agents
- * write their reports as they go, so polling this shows a run as it happens.
+ * Every job's state, read from the spec folders on disk; the RingMaster app
+ * imports from this. Agents write their reports as they go, so reading it
+ * again shows a run as it happens.
  */
 final class Board
 {
