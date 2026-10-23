@@ -129,3 +129,17 @@ it('names the verify command in the session summary', function () {
 
     expect($project->read('docs/agent/standards.summary.md'))->toContain('Done means `composer test` passes.');
 });
+
+it('renders /ring-master-inbox only when a RingMaster app is configured, pointing at it', function () {
+    $project = fixtureProject();
+    (new Sync)->run($project);
+
+    expect($project->exists('.claude/skills/ring-master-inbox/SKILL.md'))->toBeFalse()
+        ->and((string) $project->read(Sync::summaryPath($project)))->not->toContain('ring-master-app');
+
+    $project = withConfig($project, "board: { app: /opt/ring-master/ }\n");
+    (new Sync)->run($project, force: true);
+
+    expect((string) $project->read('.claude/skills/ring-master-inbox/SKILL.md'))->toContain('php /opt/ring-master/artisan mcp:start ring-master')
+        ->and((string) $project->read(Sync::summaryPath($project)))->toContain("# ring-master-app: /opt/ring-master\n");
+});

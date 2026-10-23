@@ -94,7 +94,7 @@ final class SkillRenderer
             $name = 'ring-master-'.basename($file, '.md');
             $stage = self::STAGE_SKILLS[$name] ?? null;
 
-            if (($stage !== null && ! $project->config->bool($stage)) || ! $this->postMortemSkillEnabled($project, $name)) {
+            if (($stage !== null && ! $project->config->bool($stage)) || ! $this->conditionalSkillEnabled($project, $name)) {
                 continue;
             }
 
@@ -152,9 +152,10 @@ final class SkillRenderer
         return $prefix.$body.'.'.$suffix;
     }
 
-    private function postMortemSkillEnabled(Project $project, string $name): bool
+    private function conditionalSkillEnabled(Project $project, string $name): bool
     {
         return match ($name) {
+            'ring-master-inbox' => Template::boardApp($project) !== null,
             'ring-master-post-mortem' => $project->config->string('stages.post_mortem') !== 'off',
             'ring-master-propose' => $project->config->string('stages.post_mortem') !== 'off' && $project->config->globalStandards() !== [],
             default => true,

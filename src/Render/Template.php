@@ -43,6 +43,32 @@ final class Template
     }
 
     /**
+     * The RingMaster app's folder from `board.app`, with a leading "~"
+     * expanded; null when no app is configured.
+     */
+    public static function boardApp(Project $project): ?string
+    {
+        $path = $project->config->nullableString('board.app');
+
+        if ($path === null || trim($path) === '') {
+            return null;
+        }
+
+        if ($path === '~' || str_starts_with($path, '~/')) {
+            $home = getenv('HOME');
+
+            if (! is_string($home) || $home === '') {
+                $entry = function_exists('posix_getpwuid') ? posix_getpwuid(posix_geteuid()) : false;
+                $home = is_array($entry) ? $entry['dir'] : '';
+            }
+
+            $path = $home === '' ? $path : rtrim($home, '/').substr($path, 1);
+        }
+
+        return rtrim(realpath($path) ?: $path, '/');
+    }
+
+    /**
      * @return array<string, string>
      */
     public static function vars(Project $project): array
@@ -54,6 +80,7 @@ final class Template
         $globals = array_map(static fn (array $entry): string => '`'.$entry['package'].'`', $config->globalStandards());
 
         $base = [
+            'board_app' => self::boardApp($project) ?? '',
             'version' => self::version($project),
             'agent_dir' => $project->agentPath(),
             'standards_dir' => $project->agentPath('standards'),

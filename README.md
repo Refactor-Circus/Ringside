@@ -33,6 +33,7 @@ Ringside replaces `refactor-circus/agent-kit`. Swap the dependency (`composer re
 | Escalations | `/ring-master-approve`, `/ring-master-rework` | accept as is, or send back with a note |
 | Post-mortem | `/ring-master-post-mortem` | accept, edit or reject standards proposals |
 | Global proposals | `/ring-master-propose` | review the PR on the global standards repo |
+| RingMaster | `/ring-master-inbox` | queue work and answer questions in RingMaster instead |
 
 Spec review, the factory and the post-mortem are [Claude Code workflows](https://code.claude.com/docs/en/workflows): scripts that orchestrate subagents in the background and return one result. They ship in `resources/workflows/` and the skills launch them by path. A workflow can't ask you anything mid-run, so each architectural question ends the run; your answer goes into the spec's `decisions.md` and the next run picks it up. Tracker and host calls always run in your session, where your credentials and MCP connections are.
 
@@ -61,6 +62,22 @@ workspace:
 A spec there can change several packages: each task group names its package (`package: Atrium`). The factory gives the job its own folder (`.ring-master/jobs/<spec>/`) with a worktree on the job branch for every package it changes and a link to the main checkout of every other one, so a package's local path repositories (`../Keystone`) resolve to the job's versions. Each package is built, tested and gated with its own commands, in dependency order, and the job ends with one PR per package. `ringside worktrees <spec> [--setup|--remove]` manages the job folder.
 
 A spec can also create a package. List it under `new_packages` in the spec's `meta.yml` (name, type, features, dependencies); spec review asks you to settle each of those, since a new package is an architectural decision. The factory then runs `ringside new-package`, which scaffolds a Laravel package with the Laravel installer's `laravel package` command (or a plain PHP one with `composer init`), commits it on `main` and adds it to the workspace, before building. Publishing its repository stays your step.
+
+## RingMaster
+
+[RingMaster](https://github.com/Refactor-Circus/RingMaster) is the optional app for all of this: a board of every job across your workspaces, a queue you add ideas, tickets and specs to, and an inbox where you answer the questions jobs stop on. Point a project (or a workspace root) at it:
+
+```yaml
+board: { app: ~/Projects/RingMaster }
+```
+
+and add its MCP server to Claude Code once:
+
+```bash
+claude mcp add --scope user ring-master -- php ~/Projects/RingMaster/artisan mcp:start ring-master
+```
+
+Sessions then start with a line like "RingMaster: 2 queued, 1 need you", and `/ring-master-inbox` works through it: it applies the answers you gave in RingMaster so stopped jobs resume, then claims queued tasks and ships them. Run unattended this way, every question a stage would ask you goes to RingMaster instead (into the spec's `questions.yml`), and the session moves on. Under `/loop` it drains the queue hands-off.
 
 ## Standards
 
@@ -132,6 +149,7 @@ hooks:
   post_edit_format: { enabled: true, command: 'vendor/bin/pint {file}' }
   session_start_summary: true
 workspace: { packages: [], jobs_dir: .ring-master/jobs }   # set packages to work across several from a parent folder
+board: { app: null }                     # the RingMaster app's folder; enables /ring-master-inbox and the session summary
 new_package: { type: laravel, vendor: null, namespace: null, features: [config], laravel_bin: laravel, php: '^8.5' }
 ```
 

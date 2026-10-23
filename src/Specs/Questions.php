@@ -16,7 +16,7 @@ use Symfony\Component\Yaml\Yaml;
  *       options: [Per file, Per line]
  *       recommendation: Per line
  *       evidence: src/Import.php:40
- *       source: build            # build | spec-review
+ *       source: build            # the stage to return to: ticket | shape | spec-review | approval | tasks | build
  */
 final class Questions
 {

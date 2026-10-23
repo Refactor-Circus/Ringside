@@ -94,7 +94,35 @@ match ($argv[1] ?? '') {
             return;
         }
 
-        echo trim((string) preg_replace('/^#.*\n/', '', $summary))."\n";
+        echo trim((string) preg_replace('/^#.*\n/m', '', $summary))."\n";
+
+        // RingMaster's one-line queue summary, when an app is configured and answers within 5 seconds.
+        if (preg_match('/^# ring-master-app: (.+)$/m', $summary, $app) && is_file($app[1].'/artisan')) {
+            $process = proc_open([PHP_BINARY, $app[1].'/artisan', 'ring-master:summary', '--project='.$root], [1 => ['pipe', 'w'], 2 => ['file', PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null', 'w']], $pipes, $app[1]);
+
+            if (is_resource($process)) {
+                stream_set_blocking($pipes[1], false);
+                $line = '';
+                $deadline = microtime(true) + 5;
+
+                while (microtime(true) < $deadline && ! feof($pipes[1])) {
+                    $read = [$pipes[1]];
+                    $write = $except = null;
+
+                    if (stream_select($read, $write, $except, 0, 200000) > 0) {
+                        $line .= (string) fread($pipes[1], 8192);
+                    }
+                }
+
+                fclose($pipes[1]);
+                proc_terminate($process);
+                proc_close($process);
+
+                if (trim($line) !== '') {
+                    echo trim($line)."\n";
+                }
+            }
+        }
 
         $next = ['building' => '/ring-master-factory', 'needs-decision' => '/ring-master-decide', 'escalated' => '/ring-master-approve or /ring-master-rework', 'in-progress' => '/ring-master-implement', 'merged' => '/ring-master-post-mortem'];
 

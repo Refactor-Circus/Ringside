@@ -121,6 +121,7 @@ final readonly class Config
             ],
             'pint' => ['allow_diff' => false],
             'workspace' => ['packages' => [], 'jobs_dir' => '.ring-master/jobs'],
+            'board' => ['app' => null],              // path to the RingMaster app; enables /ring-master-inbox and the session summary
             'new_package' => [
                 'type' => 'laravel',                 // laravel: `laravel package`; php: `composer init`
                 'vendor' => null,                    // composer vendor, e.g. acme; default: the workspace's own

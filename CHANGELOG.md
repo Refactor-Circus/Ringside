@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- `board.app` points a project at the RingMaster app. Sessions then start with RingMaster's one-line queue summary, and `/ring-master-inbox` applies the answers given there, then claims queued tasks over RingMaster's MCP server and ships them unattended: every question a stage would ask goes to `questions.yml` with the stage to return to as `source` (`ticket`, `shape`, `spec-review`, `approval`, `tasks`, `build`).
+- `/ring-master-decide` and `/ring-master-approve` take answers given in RingMaster without asking again.
+
 ## 0.4.0
 
 - Open architectural questions live in the spec's `questions.yml` (id, question, options, recommendation, evidence, source), written by the factory and spec review and cleared by `/ring-master-decide`, so RingMaster can show and answer them. Spec review now hands its questions to `/ring-master-decide` too.
