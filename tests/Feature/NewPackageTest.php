@@ -7,6 +7,33 @@ use RefactorCircus\Ringside\Scaffold\PackageScaffolder;
 use RefactorCircus\Ringside\Scaffold\WorkspaceConfig;
 use RefactorCircus\Ringside\Shell;
 
+const SCAFFOLD_GIT_ENV = ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL', 'EMAIL'];
+
+beforeEach(function () {
+    $this->savedEnv = array_combine(SCAFFOLD_GIT_ENV, array_map(getenv(...), SCAFFOLD_GIT_ENV));
+
+    // Like CI: no global or system git config and no identity guessed from the
+    // host, so the new package repo's scaffold commit has only the identity below.
+    $this->gitConfig = (string) tempnam(sys_get_temp_dir(), 'ring-master-gitconfig-');
+    file_put_contents($this->gitConfig, "[user]\n\tuseConfigOnly = true\n");
+    putenv("GIT_CONFIG_GLOBAL={$this->gitConfig}");
+    putenv('GIT_CONFIG_NOSYSTEM=1');
+    putenv('EMAIL');
+
+    foreach (['AUTHOR', 'COMMITTER'] as $role) {
+        putenv("GIT_{$role}_NAME=Test Author");
+        putenv("GIT_{$role}_EMAIL=author@example.com");
+    }
+});
+
+afterEach(function () {
+    foreach ($this->savedEnv as $name => $value) {
+        putenv($value === false ? $name : "{$name}={$value}");
+    }
+
+    @unlink($this->gitConfig);
+});
+
 function scaffoldWorkspace(string $config = ''): Project
 {
     $root = fixtureProject(['ring-master.yml' => "workspace:\n  packages: [Keystone]   # keep this comment\n".$config])->root;
@@ -65,7 +92,7 @@ it('creates a laravel package with the laravel installer, commits it and adds it
         ->and(Shell::run(['git', 'branch', '--show-current'], $project->path('Ledger'))[1])->toBe('main')
         ->and((string) $project->read('ring-master.yml'))->toContain('packages: [Keystone, Ledger]   # keep this comment')
         ->and((new Project($project->root))->config->list('workspace.packages'))->toBe(['Keystone', 'Ledger']);
-});
+})->skipOnWindows(); // the fake `laravel` is a #!/bin/sh script
 
 it('creates a plain PHP package with composer init', function () {
     $project = scaffoldWorkspace();
