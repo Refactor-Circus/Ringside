@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use RefactorCircus\Ringside\Project;
+use RefactorCircus\Ringside\Shell;
 
 /**
  * A throwaway consuming package with refactor-circus/standards "installed"
@@ -94,6 +95,24 @@ function writeFixture(string $root, string $path, string $contents): void
     }
 
     file_put_contents($file, $contents);
+}
+
+/**
+ * A package folder `$root/$name` with a composer.json, committed as the
+ * first commit of its own git repo on `main`.
+ *
+ * @param  array<string, string>  $requires
+ * @param  array<string, string>  $scripts
+ */
+function packageRepo(string $root, string $name, array $requires = [], array $scripts = []): void
+{
+    writeFixture($root, "{$name}/composer.json", (string) json_encode(['name' => 'acme/'.strtolower($name), 'require' => $requires, 'scripts' => $scripts]));
+    $dir = "{$root}/{$name}";
+    Shell::run(['git', 'init', '-q', '-b', 'main'], $dir);
+    Shell::run(['git', 'config', 'user.email', 't@t'], $dir);
+    Shell::run(['git', 'config', 'user.name', 't'], $dir);
+    Shell::run(['git', 'add', '.'], $dir);
+    Shell::run(['git', 'commit', '-q', '-m', 'init'], $dir);
 }
 
 /**
