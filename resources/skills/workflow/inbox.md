@@ -8,7 +8,7 @@ argument-hint: "[--once | --answers | --task=<id> --session=<name>]"
 
 # Inbox
 
-RingMaster holds the user's queue and the answers they gave there. You reach it through its MCP server, `ring-master`: `queue-status`, `pending-answers`, `next-task`, `claim-task`, `heartbeat`, `link-spec`, `release-task`. If those tools are not available, stop and tell the user to add the server once:
+RingMaster holds the user's queue and the answers they gave there. You reach it through its MCP server, `ring-master`: `queue-status`, `pending-answers`, `next-task`, `claim-task`, `heartbeat`, `link-spec`, `release-task`, `propose-task`. If those tools are not available, stop and tell the user to add the server once:
 
 ```bash
 claude mcp add --scope user ring-master -- php {{board_app}}/artisan mcp:start ring-master
@@ -39,7 +39,12 @@ Call `next-task`. If there is none, say the queue is empty and stop. Otherwise `
 - As soon as the job's spec folder exists, call `link-spec` with its id. From then on the task follows the spec's status.
 - Call `heartbeat` when each stage starts, with the stage as `message`, so the claim stays alive and the timeline shows progress.
 - Ship stopping because a stage waits on the user, or because the PR is open, is the normal end: leave the task as it is.
-- If the work cannot be done as asked, `release-task` with `failed: true` and the reason. If you have to stop for any other reason, `release-task` with the reason so another session can take it.
+- If the task's `resume_note` is set, do what it says first (it names a job this task waited on that is now done, and how to bring its change in).
+- If the work cannot be done as asked, `release-task` with `failed: true` and the reason. If you have to stop for any other reason, `release-task` with the reason: a task without a spec goes back to the queue, one with a spec is paused until the user resumes it, so say what they must fix first.
+
+## Follow-up jobs
+
+When a job needs a separate one first (a fix in another package, a release, anything the user decided belongs in its own job), never start it yourself and never do it inside this job. Call `propose-task` with the task that needs it (your claimed task, or, applying answers, the spec's `task_ids` from `pending-answers`), the other package's folder name as `project`, a title, a `body` written as the task for a fresh session, and the `reason`. The user accepts or declines it in RingMaster's Inbox; your task waits, blocked, and resumes by itself once the follow-up is done or its PR is merged. Then `release-task` with the reason if you hold a claim, and stop work on that job.
 
 Every stage is a skill you invoke with the Skill tool; this one is the only one the user has to start.
 
@@ -48,7 +53,7 @@ Every stage is a skill you invoke with the Skill tool; this one is the only one 
 The user is not watching this session; RingMaster is where they answer. Wherever a stage would ask them anything (AskUserQuestion, confirming a ticket draft, confirming the standards list, approving the spec):
 
 1. Make sure the spec folder exists first (create it as the stage would, with the status it would have), so the question has a home.
-2. Write each question to the spec's `questions.yml` (format in `/ring-master-decide`) with concrete options, your recommendation, the evidence in one line, and `source:` the stage to come back to: `ticket`, `shape`, `spec-review`, `approval`, `tasks` or `build`. Ask everything that stage needs in one go.
+2. Write each question to the spec's `questions.yml` (format in `/ring-master-decide`) with concrete options, your recommendation (the exact text of one option, not a letter), the evidence in one line, and `source:` the stage to come back to: `ticket`, `shape`, `spec-review`, `approval`, `tasks` or `build`. Ask everything that stage needs in one go.
 3. Set `status: needs-decision` in `meta.yml`, call `heartbeat` with "Waiting on you: <first question>", and move on to the next task.
 
 Run one command per Bash call (no `;`, `&&` or pipes): a session started by RingMaster's runner may only run the commands it allows, and a compound command is refused as a whole.

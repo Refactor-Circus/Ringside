@@ -40,7 +40,7 @@ const ASK = {
   properties: {
     question: { type: 'string' },
     options: { type: 'array', items: { type: 'string' } },
-    recommendation: { type: 'string' },
+    recommendation: { type: 'string', description: 'The full text of one of options, copied exactly (not a letter or number)' },
     evidence: { type: 'string' },
   },
 }
@@ -139,7 +139,8 @@ function noProgress(history, current, rounds) {
 const common = `You are working on the Ring Master job for spec "${spec.title}" (${spec.id}).
 Code changes happen in the job worktree; reports go in the spec folder of the main checkout: ${specDir}.
 Read ${specDir}/spec.md and ${specDir}/decisions.md (if present) first. Decisions there are final: never re-raise them.
-Standards that apply: ${spec.standards.length ? spec.standards.map(p => `${job.root}/${p}`).join(', ') : 'see ' + specDir + '/standards.md'}.`
+Standards that apply: ${spec.standards.length ? spec.standards.map(p => `${job.root}/${p}`).join(', ') : 'see ' + specDir + '/standards.md'}.
+Shell: one command per Bash call, with no \`&&\`, \`;\` or pipes. A session started by RingMaster's runner only runs the commands it allows, and a compound command is refused as a whole. To work in another folder, run \`cd <folder>\` as its own call first, or use \`git -C <folder>\` and \`composer --working-dir=<folder>\`. Read files with the Read tool, not cat. If a command is refused, split it up and try again before you report a failure.`
 
 // --- Prepare ---------------------------------------------------------------
 

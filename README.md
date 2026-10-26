@@ -35,7 +35,7 @@ Ringside replaces `refactor-circus/agent-kit`. Swap the dependency (`composer re
 | Global proposals | `/ring-master-propose` | review the PR on the global standards repo |
 | RingMaster | `/ring-master-inbox` | queue work and answer questions in RingMaster instead |
 
-Spec review, the factory and the post-mortem are [Claude Code workflows](https://code.claude.com/docs/en/workflows): scripts that orchestrate subagents in the background and return one result. They ship in `resources/workflows/` and the skills launch them by path. A workflow can't ask you anything mid-run, so each architectural question ends the run; your answer goes into the spec's `decisions.md` and the next run picks it up. Tracker and host calls always run in your session, where your credentials and MCP connections are.
+Spec review, the factory and the post-mortem are [Claude Code workflows](https://code.claude.com/docs/en/workflows): scripts that orchestrate subagents in the background and return one result. They ship in `resources/workflows/` and the skills launch them by path. A workflow can't ask you anything mid-run, so each architectural question ends the run; your answer goes into the spec's `decisions.md` and the next run picks it up. After you answer spec review's questions it only rechecks that the answers landed, and after `max_passes` reviews it stops asking and lists what's left as notes for your approval. Tracker and host calls always run in your session, where your credentials and MCP connections are.
 
 ### The factory
 
@@ -112,7 +112,7 @@ host: { provider: auto, base: main, draft_pr: false }
 stages:
   ticket: true
   shape: true
-  spec_review: { enabled: true, critics: [scope, risk, testability], rounds: 1 }
+  spec_review: { enabled: true, critics: [scope, risk, testability], rounds: 1, max_passes: 2 }
   tasks: true
   factory: true
   post_mortem: on_merge                # on_merge | on_pr | manual | off

@@ -14,15 +14,15 @@ Architectural decisions belong to the user. Never answer them yourself.
 3. Append each answer to `decisions.md` as the next `D-xxx` entry (question, choice, rationale, date, raised by). Never edit earlier entries. Then rewrite `questions.yml` without the answered entries (with the Write tool; `[]` when none are left).
 4. If an answer changes scope, add a dated "Addendum" section to `spec.md` and, if needed, new tasks to `tasks.md`.
 5. Comment the decisions on the ticket (tracker adapter `comment`).
-6. Relaunch by each question's `source`, the stage it came from: `ticket` (create the ticket as drafted, or redraft) and `shape` go back to `/ring-master-shape-spec`'s next step; `spec-review` goes back to `/ring-master-spec-review` (status `written`); `approval` sets `status: approved` when the answer approves the spec, or revises `spec.md` and asks again; `tasks` goes back to `/ring-master-create-tasks`; `build` sets `status: approved` and runs `/ring-master-factory`. Finished task groups stay ticked, so the build resumes where it stopped.
+6. Relaunch by each question's `source`, the stage it came from: `ticket` (create the ticket as drafted, or redraft) and `shape` go back to `/ring-master-shape-spec`'s next step; `spec-review` goes back to `/ring-master-spec-review <spec> --recheck=<the D-ids you just recorded>` (status `written`), which checks that those answers landed instead of reviewing the whole spec again; `approval` sets `status: approved` when the answer approves the spec, or revises `spec.md` and asks again; `tasks` goes back to `/ring-master-create-tasks`; `build` sets `status: approved` and runs `/ring-master-factory`. Finished task groups stay ticked, so the build resumes where it stopped.
 
 `questions.yml` holds the open questions so that RingMaster can show them too:
 
 ```yaml
 - id: Q-001                      # Q-001, Q-002, ... in the order raised
   question: One row per file or per line?
-  options: [Per file, Per line]
-  recommendation: Per line
+  options: [Per file, Per line]  # plain text, no A./B. labels
+  recommendation: Per line       # the exact text of one option, never a letter or number
   evidence: src/Import.php:40    # where it came up, one line
   source: build                  # the stage to return to: ticket | shape | spec-review | approval | tasks | build
 ```

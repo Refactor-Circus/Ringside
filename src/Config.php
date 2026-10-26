@@ -69,7 +69,7 @@ final readonly class Config
             'stages' => [
                 'ticket' => true,
                 'shape' => true,
-                'spec_review' => ['enabled' => true, 'critics' => ['scope', 'risk', 'testability'], 'rounds' => 1],
+                'spec_review' => ['enabled' => true, 'critics' => ['scope', 'risk', 'testability'], 'rounds' => 1, 'max_passes' => 2],
                 'tasks' => true,
                 'factory' => true,
                 'post_mortem' => 'on_merge',

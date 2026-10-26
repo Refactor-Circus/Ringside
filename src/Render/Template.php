@@ -114,6 +114,7 @@ final class Template
             'stage_post_mortem' => $config->string('stages.post_mortem'),
             'spec_review_critics' => implode(', ', $config->list('stages.spec_review.critics')),
             'spec_review_rounds' => (string) max(1, $config->int('stages.spec_review.rounds')),
+            'spec_review_max_passes' => (string) max(1, $config->int('stages.spec_review.max_passes')),
             'discovery_project_mode' => $config->string('discovery.project.mode'),
             'discovery_global_mode' => $config->string('discovery.global.mode'),
             'severity_rubric' => trim((string) file_get_contents(self::resources('fragments/severity.md'))),

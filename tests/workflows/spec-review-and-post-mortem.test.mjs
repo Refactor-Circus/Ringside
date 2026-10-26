@@ -18,6 +18,36 @@ test('spec review stops when only nits remain', async () => {
   assert.ok(!calls.some(c => c.label.startsWith('revise')))
 })
 
+const answered = [{ id: 'D-001', question: 'Sync or queued import?', choice: 'queued', rationale: 'r', date: '2026-10-23' }, { id: 'D-002', question: 'CSV or JSON?', choice: 'CSV', rationale: 'r', date: '2026-10-23' }]
+
+test('after answers, one recheck of the answered decisions replaces the full critique', async () => {
+  const { result, calls } = await run('ring-master-spec-review', baseArgs({ decisions: answered, pass: 2, recheck: ['D-002'] }), call => {
+    if (call.label === 'recheck r1') return { findings: [{ severity: 'major', summary: 'criterion 4 still says JSON', fix: 'say CSV' }], decisions: [] }
+    return { findings: [], decisions: [] }
+  })
+  const critiques = calls.filter(c => c.opts.phase === 'Critique')
+  assert.deepEqual(critiques.map(c => c.label), ['recheck r1', 'recheck r2'])
+  assert.match(critiques[0].prompt, /CSV or JSON/)
+  assert.doesNotMatch(critiques[0].prompt, /Sync or queued/)
+  assert.equal(result.findings[0].critic, 'recheck')
+  assert.equal(result.status, 'reviewed')
+})
+
+test('past max_passes, questions come back as notes and the spec is reviewed', async () => {
+  const ask = { findings: [], decisions: [{ question: 'Cache the rate limit?', options: ['yes', 'no'], recommendation: 'no' }] }
+  const { result } = await run('ring-master-spec-review', baseArgs({ decisions: answered, pass: 3, recheck: ['D-001'] }), () => ask)
+  assert.equal(result.status, 'reviewed')
+  assert.deepEqual(result.decisions, [])
+  assert.equal(result.notes[0].question, 'Cache the rate limit?')
+})
+
+test('within max_passes a recheck can still ask', async () => {
+  const ask = { findings: [], decisions: [{ question: 'D-001 and D-002 conflict: which wins?', options: ['D-001', 'D-002'], recommendation: 'D-002' }] }
+  const { result } = await run('ring-master-spec-review', baseArgs({ decisions: answered, pass: 2, recheck: ['D-001', 'D-002'] }), () => ask)
+  assert.equal(result.status, 'needs-decision')
+  assert.deepEqual(result.notes, [])
+})
+
 const analysis = { metrics: { rounds: 2 }, root_causes: [], human_review_delta: ['missed N+1 query'] }
 const proposals = {
   proposals: [
