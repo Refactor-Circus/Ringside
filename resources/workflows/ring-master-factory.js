@@ -200,7 +200,7 @@ for (let round = 1; round <= review.rounds.max; round++) {
 
   phase('Gate')
   const runGate = (pkg, file) => agent(`${common}
-Run the gate in ${treeFor(pkg)}: \`${command(pkg, 'verify')}\`${command(pkg, 'format_check') ? ` and \`${command(pkg, 'format_check')}\`` : ''}${workspace ? '' : ', then `vendor/bin/ringside check`'}.
+Run the gate in ${treeFor(pkg)}: \`${command(pkg, 'verify')}\`${command(pkg, 'format_check') ? ` and \`${command(pkg, 'format_check')}\`` : ''}${workspace ? '' : `, then \`composer --working-dir=${treeFor(pkg)} exec ringside check\` (not vendor/bin/ringside by path, which the runner refuses)`}.
 ${review.gate.criteria_mapping ? `Map every numbered acceptance criterion in spec.md${workspace ? ` that ${pkg} proves` : ''} to the test (file and name) or code that proves it.` : ''}
 Every failure is a blocker finding with the failing output summarised${workspace ? `; report files as ${pkg}/<path>` : ''}. List changed_files (git diff --name-only ${config.host.base}...${job.branch}${workspace ? `, prefixed with ${pkg}/` : ''}).
 Write ${roundDir}/${file} starting with "VERDICT: PASS" or "VERDICT: CHANGES".`, opts('gate', { phase: 'Gate', label: workspace ? `gate ${pkg} r${round}` : `gate r${round}`, schema: GATE }))

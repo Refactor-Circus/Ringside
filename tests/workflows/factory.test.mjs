@@ -141,6 +141,14 @@ test('a single-package per-job job prepares its worktree with ringside worktrees
   assert.ok(!prompt.includes(setup), 'the configured setup string is not in the prompt')
 })
 
+test('the gate runs ringside check in the job worktree through composer, never by path', async () => {
+  const args = baseArgs({ config: { build: { parallel: false, max_concurrency: 2, worktree: { mode: 'per-job', setup: 'auto' } } } })
+  const { calls } = await run('ring-master-factory', args, responder())
+  const prompt = calls.find(c => c.label === 'gate r1').prompt
+  assert.match(prompt, /`composer --working-dir=\/work\/pkg--import exec ringside check`/)
+  assert.doesNotMatch(prompt, /then `vendor\/bin\/ringside check`/)
+})
+
 const workspaceArgs = () => {
   const args = baseArgs({
     workspace: {

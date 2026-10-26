@@ -75,3 +75,9 @@ it('counts no questions once questions.yml is emptied to []', function () {
 
     expect($import['questions'])->toBe(0)->and($import['open_questions'])->toBe([]);
 });
+
+it('reads a pr written as a bare url', function () {
+    $project = fixtureProject(['docs/agent/specs/2026-10-25-1349-install/meta.yml' => "title: Install\nstatus: in-review\npr: https://github.com/acme/pkg/pull/1\n"]);
+
+    expect((new Board([$project]))->data()['projects'][0]['specs'][0]['pr'])->toBe(['url' => 'https://github.com/acme/pkg/pull/1']);
+});

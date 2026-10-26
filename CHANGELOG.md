@@ -7,7 +7,9 @@
 
 - Spec review converges. After you answer its questions, `/ring-master-decide` relaunches it with `--recheck=<D-ids>`: one critic checks those answers landed in `spec.md` instead of a fresh full critique (which kept finding new questions in an ever more detailed spec). New `stages.spec_review.max_passes` (default 2, counted in `meta.yml` `review_passes`): past it, what the critics would ask goes into `spec-review.md` as non-blocking notes and the spec goes to approval.
 - Factory agents are told to run one command per Bash call (`cd` on its own, `git -C`, `composer --working-dir`) and to retry a refused command split up: under RingMaster's runner a compound command is refused whole, and the prepare agent gave up on its first `cd … && …`.
+- The factory gate runs `composer --working-dir=<worktree> exec ringside check` instead of `vendor/bin/ringside check`: the gate agent works from the main checkout, the runner refuses the worktree's binary by absolute path, so the gate went red three rounds running on a check that passed.
 - A question's `recommendation` must be the exact text of one option (workflow schemas, `/ring-master-decide` and `/ring-master-inbox` say so); agents had written `A`, which RingMaster showed as an extra, near-empty option.
+- The board reads a `pr:` written as a bare URL (as `{url}`); RingMaster missed such PRs, so a task waiting on one never resumed after the merge.
 - A job sent back from review (`/ring-master-rework` on an `in-review` spec) keeps its branch and PR: the factory and `/ring-master-approve` push to the PR in `meta.yml` `pr:` and update its body instead of opening a second one.
 - `/ring-master-inbox` proposes follow-up jobs with RingMaster's new `propose-task` tool (a fix in another package, say) instead of stopping with "queue this yourself": the user accepts it in the Inbox, and the waiting task resumes once it is done, following the task's `resume_note`.
 

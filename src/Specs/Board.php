@@ -124,7 +124,12 @@ final class Board
             'status' => $status,
             'column' => self::column($status),
             'ticket' => is_array($meta['ticket'] ?? null) ? $meta['ticket'] : null,
-            'pr' => is_array($meta['pr'] ?? null) ? $meta['pr'] : null,
+            // A bare URL is how a session sometimes writes it; read it as {url}.
+            'pr' => match (true) {
+                is_array($meta['pr'] ?? null) => $meta['pr'],
+                is_string($meta['pr'] ?? null) && $meta['pr'] !== '' => ['url' => $meta['pr']],
+                default => null,
+            },
             'branch' => is_string($meta['branch'] ?? null) ? $meta['branch'] : null,
             'tasks' => ['done' => count(array_filter($tasks, static fn (array $t): bool => $t['done'])), 'total' => count($tasks)],
             'groups' => count($groups),
