@@ -1,0 +1,17 @@
+id: 2026-10-25-1349-worktree-local-manifest-install
+title: Install job worktree dependencies from composer.local.json
+status: closed
+pr: https://github.com/Refactor-Circus/Ringside/pull/1
+review_passes: 3
+created: 2026-10-25
+ticket: { provider: file, key: T-001, url: docs/agent/tickets/T-001.md }
+standards:
+  refactor-circus/standards:
+    version: dev-main
+    reference: 2e6440f82ca5
+runs:
+  - { workflow: ring-master-factory, run_id: wf_77f93bd7-07f, result: needs-decision, round: 0, date: 2026-10-26 }
+  - { workflow: ring-master-factory, run_id: wf_5b193a7c-a8a, result: needs-decision, round: 1, date: 2026-10-26 }
+  - { workflow: ring-master-factory, run_id: wf_1b766faa-213, result: approved, round: 2, date: 2026-10-26 }
+  - { workflow: ring-master-factory, run_id: wf_2ac544ae-b89, result: approved, round: 1, date: 2026-10-26 }
+  - { workflow: ring-master-post-mortem, run_id: wf_e8731e39-6fb, result: needs-decision, date: 2026-10-26 }
