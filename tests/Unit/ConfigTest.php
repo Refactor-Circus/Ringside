@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use RefactorCircus\Ringside\Config;
+
 it('merges ring-master.yml over the defaults', function () {
     $config = fixtureProject(['ring-master.yml' => "build:\n  parallel: true\ntargets: [agents]\n"])->config;
 
@@ -36,3 +38,33 @@ it('rejects unknown keys, roles, severities and bad round limits', function () {
 it('accepts the defaults', function () {
     expect(fixtureProject()->config->validate())->toBe([]);
 });
+
+it('defaults build.worktree.setup to auto', function () {
+    expect(Config::defaults()['build']['worktree']['setup'])->toBe('auto')
+        ->and(fixtureProject()->config->worktreeSetup())->toBe('auto');
+});
+
+it('reads an absent, null or empty build.worktree.setup as auto', function (string $yaml) {
+    expect(fixtureProject(['ring-master.yml' => $yaml])->config->worktreeSetup())->toBe('auto');
+})->with([
+    'absent' => "build:\n  worktree:\n    mode: per-job\n",
+    'null' => "build:\n  worktree:\n    setup: null\n",
+    'empty' => "build:\n  worktree:\n    setup: ''\n",
+]);
+
+it('reads an explicit build.worktree.setup command as is', function () {
+    $config = fixtureProject(['ring-master.yml' => "build:\n  worktree:\n    setup: 'touch setup-ran'\n"])->config;
+
+    expect($config->worktreeSetup())->toBe('touch setup-ran');
+});
+
+it('fails loud on a non-string build.worktree.setup', function (string $value) {
+    $config = fixtureProject(['ring-master.yml' => "build:\n  worktree:\n    setup: {$value}\n"])->config;
+
+    expect(fn () => $config->worktreeSetup())->toThrow(RuntimeException::class, 'build.worktree.setup');
+})->with([
+    'list' => '[composer, install]',
+    'map' => '{ run: composer }',
+    'number' => '5',
+    'boolean' => 'true',
+]);

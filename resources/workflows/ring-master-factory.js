@@ -151,7 +151,7 @@ const ws = await agent(`${common}
 Prepare the job workspace. ${workspace
     ? `This is a workspace job across ${packages.join(', ')}. From ${job.root}, run \`vendor/bin/ringside worktrees ${spec.id} --setup\` and return ready=true only if it exits 0 (put its output in detail otherwise).`
     : worktreeMode === 'per-job'
-    ? `From ${job.root}, create or reuse a git worktree at ${job.worktree} on branch ${job.branch} (based on ${config.host.base}; reuse it if it already exists). Then run \`${config.build.worktree.setup}\` inside it.`
+    ? `From ${job.root}, run \`vendor/bin/ringside worktrees ${spec.id} --setup\`: it creates or reuses the job worktree at ${job.worktree} on branch ${job.branch} and installs its dependencies. Return ready=true only if it exits 0, with worktree set to the path it prints. On a non-zero exit, return ready=false with the command output in detail: do not repair anything manually, and never create the worktree with git yourself or fall back to any other command.`
     : `Work in ${job.root} itself: create or check out branch ${job.branch} (based on ${config.host.base}).`}
 Return ready=false with the error output in detail if anything fails.`, opts('prepare', { label: 'prepare', schema: PREPARED }))
 if (!ws || !ws.ready) return { status: 'escalated', stage: 'prepare', reasons: ['workspace setup failed'], detail: ws && ws.detail }

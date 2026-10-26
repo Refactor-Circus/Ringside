@@ -5,9 +5,12 @@ declare(strict_types=1);
 use RefactorCircus\Ringside\Shell;
 
 it('passes the workflow simulations (node --test)', function () {
-    [$code, $output] = Shell::run(['node', '--test', 'tests/workflows/'], dirname(__DIR__, 2));
+    // Node 22+ reads a directory argument as a module, so name each test file.
+    $files = glob(dirname(__DIR__).'/workflows/*.test.mjs') ?: [];
+    [$code, $output] = Shell::run(['node', '--test', ...$files], dirname(__DIR__, 2));
 
-    expect($code)->toBe(0, $output);
+    expect($files)->not->toBeEmpty()
+        ->and($code)->toBe(0, $output);
 })->skip(fn (): bool => Shell::run(['node', '--version'], sys_get_temp_dir())[0] !== 0, 'node is not installed');
 
 it('keeps every workflow meta block a pure literal with name and description', function () {

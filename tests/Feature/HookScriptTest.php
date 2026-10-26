@@ -39,8 +39,9 @@ it('adds RingMaster\'s queue line when an app is configured', function () {
     $project = withConfig(fixtureProject(), "board: { app: {$app->root} }\n");
     (new Sync)->run($project);
 
+    // The hook passes the project root with forward slashes on every OS.
     expect(runHook($project->root, 'session-start'))
-        ->toContain('ringside: 2 standards', 'RingMaster: 2 queued for '.$project->root)
+        ->toContain('ringside: 2 standards', 'RingMaster: 2 queued for '.str_replace('\\', '/', $project->root))
         ->not->toContain('ring-master-app');
 });
 

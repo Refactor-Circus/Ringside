@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RefactorCircus\Ringside;
 
+use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -104,7 +105,7 @@ final readonly class Config
                 'worktree' => [
                     'mode' => 'per-job',
                     'path' => '../{package}--{spec}',
-                    'setup' => 'composer install --no-interaction',
+                    'setup' => 'auto',                // auto: install from composer.local.json when present, else composer install; any other string runs as is
                     'cleanup' => 'on_close',
                 ],
             ],
@@ -215,6 +216,21 @@ final readonly class Config
         }
 
         return $reviewers;
+    }
+
+    /**
+     * The single-package job worktree setup: `auto` when the key is absent, null
+     * or empty, the configured command otherwise. A non-string value fails loud.
+     */
+    public function worktreeSetup(): string
+    {
+        $value = $this->get('build.worktree.setup');
+
+        if ($value !== null && ! is_string($value)) {
+            throw new RuntimeException('ring-master.yml: `build.worktree.setup` must be a string (`auto` or a command), got '.get_debug_type($value).'.');
+        }
+
+        return $value === null || trim($value) === '' ? 'auto' : $value;
     }
 
     /**

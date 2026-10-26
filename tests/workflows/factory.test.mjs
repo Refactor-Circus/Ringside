@@ -126,6 +126,21 @@ test('parallel waves never run two groups that share a file at once', async () =
   assert.equal(peak, 1)
 })
 
+test('a single-package per-job job prepares its worktree with ringside worktrees --setup', async () => {
+  const setup = 'composer install --no-interaction --prefer-dist'
+  const args = baseArgs({ config: { build: { parallel: false, max_concurrency: 2, worktree: { mode: 'per-job', setup } } } })
+  const { calls } = await run('ring-master-factory', args, responder())
+  const prompt = calls.find(c => c.label === 'prepare').prompt
+  assert.match(prompt, /From \/work\/pkg, run `vendor\/bin\/ringside worktrees 2026-10-23-1430-import --setup`/)
+  assert.match(prompt, /ready=true only if it exits 0/)
+  assert.match(prompt, /non-zero exit, return ready=false with the command output in detail/)
+  assert.match(prompt, /do not repair anything manually/)
+  assert.match(prompt, /never create the worktree with git yourself or fall back to any other command/)
+  assert.doesNotMatch(prompt, /git worktree add/)
+  assert.doesNotMatch(prompt, /create or reuse a git worktree/)
+  assert.ok(!prompt.includes(setup), 'the configured setup string is not in the prompt')
+})
+
 const workspaceArgs = () => {
   const args = baseArgs({
     workspace: {

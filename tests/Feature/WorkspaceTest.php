@@ -7,17 +7,6 @@ use RefactorCircus\Ringside\Shell;
 use RefactorCircus\Ringside\Specs\Job;
 use RefactorCircus\Ringside\Workspace\Workspace;
 
-function packageRepo(string $root, string $name, array $requires = [], array $scripts = []): void
-{
-    writeFixture($root, "{$name}/composer.json", json_encode(['name' => 'acme/'.strtolower($name), 'require' => $requires, 'scripts' => $scripts]));
-    $dir = "{$root}/{$name}";
-    Shell::run(['git', 'init', '-q', '-b', 'main'], $dir);
-    Shell::run(['git', 'config', 'user.email', 't@t'], $dir);
-    Shell::run(['git', 'config', 'user.name', 't'], $dir);
-    Shell::run(['git', 'add', '.'], $dir);
-    Shell::run(['git', 'commit', '-q', '-m', 'init'], $dir);
-}
-
 function workspaceProject(): Project
 {
     $root = fixtureProject([
