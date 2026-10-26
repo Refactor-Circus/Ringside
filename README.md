@@ -140,7 +140,7 @@ escalation:
 build:
   parallel: false
   max_concurrency: 2
-  worktree: { mode: per-job, path: '../{package}--{spec}', setup: composer install --no-interaction, cleanup: on_close }
+  worktree: { mode: per-job, path: '../{package}--{spec}', setup: auto, cleanup: on_close }   # auto: composer.local.json when present, else composer install; or a command
 discovery:
   enabled: true
   project: { mode: ask }               # ask | branch | pr
@@ -154,6 +154,8 @@ new_package: { type: laravel, vendor: null, namespace: null, features: [config],
 ```
 
 `ringside check` validates the file.
+
+With `build.worktree.mode: per-job`, the factory sets up a single package's job worktree with `ringside worktrees <spec> --setup`. `setup: auto` copies the package's `composer.local.json` (and `composer.local.lock`) into the worktree when it has one, leaving a copy the worktree already holds alone, and runs `composer install` with `COMPOSER=composer.local.json`, so its local path repositories (`../Keystone`) resolve as in the main checkout; without one it runs a plain `composer install`. Any other `setup` value is a command run in the worktree as is.
 
 ## Trackers and hosts
 
@@ -172,7 +174,7 @@ Built-in adapters: `github` (tracker and host, via `gh`), `jira` (tracker, via t
 | `index --accept <key>` | record a reviewed override |
 | `propose <key> --repo=<path>` | commit a global standards proposal on a branch of the global package |
 | `cleanup [--remove]` | list or remove finished job worktrees |
-| `worktrees <spec> [--setup\|--remove]` | workspaces: create or remove a job's folder of package worktrees |
+| `worktrees <spec> [--setup\|--remove]` | create or reuse a job's worktree and, with `--setup`, install its dependencies; workspaces: a folder of package worktrees, which `--remove` removes |
 | `new-package <Name> [--type] [--feature=...] [--dry-run]` | workspaces: scaffold, git init and register a new package |
 | `migrate [--dry-run]` | move an Agent OS install into `docs/agent/` |
 
