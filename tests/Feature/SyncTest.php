@@ -19,6 +19,35 @@ it('writes the index, summary, skills, subagent, hooks and managed block', funct
         ->and($project->read('AGENTS.md'))->toStartWith("# Hand-written\n\nKeep me.\n")->toContain(ManagedBlock::START, '/ring-master-shape-spec');
 });
 
+it('gives every workflow skill and subagent a model', function () {
+    $project = fixtureProject();
+    (new Sync)->run($project);
+
+    // Standards skills and inject-standards are reference loaded into whichever session is working: no model of their own.
+    $files = array_filter(glob($project->path('.claude/{skills/ring-master-*/SKILL.md,agents/ring-master-*.md}'), GLOB_BRACE) ?: [], static fn (string $file): bool => ! str_contains($file, 'ring-master-std-') && ! str_contains($file, 'ring-master-inject-standards'));
+
+    expect($files)->not->toBeEmpty();
+
+    foreach ($files as $file) {
+        expect((string) file_get_contents($file))->toMatch('/^---\n(?:.*\n)*?model: \S+\n(?:.*\n)*?---\n/');
+    }
+
+    expect($project->read('.claude/skills/ring-master-shape-spec/SKILL.md'))->toContain("model: opus\n---\n")
+        ->and($project->read('.claude/skills/ring-master-ticket/SKILL.md'))->toContain("model: sonnet\n---\n")
+        ->and($project->read('.claude/skills/ring-master-factory/SKILL.md'))->toContain("model: sonnet\n---\n")
+        ->and($project->read('.claude/agents/ring-master-implementer.md'))->toContain('model: opus')
+        ->and($project->read('.claude/skills/ring-master-inject-standards/SKILL.md'))->not->toContain('model:');
+});
+
+it('takes each skill\'s model from its role in ring-master.yml', function () {
+    $project = fixtureProject(['ring-master.yml' => "roles:\n  orchestrator: { model: haiku }\n  writer: { model: sonnet }\n"]);
+    (new Sync)->run($project);
+
+    expect($project->read('.claude/skills/ring-master-inbox/SKILL.md'))->toContain("model: haiku\n---\n")
+        ->and($project->read('.claude/skills/ring-master-write-spec/SKILL.md'))->toContain("model: sonnet\n---\n")
+        ->and($project->read('.claude/skills/ring-master-shape-spec/SKILL.md'))->toContain("model: opus\n---\n");
+});
+
 it('is a no-op when nothing changed', function () {
     $project = fixtureProject();
     (new Sync)->run($project);

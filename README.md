@@ -116,17 +116,22 @@ stages:
   tasks: true
   factory: true
   post_mortem: on_merge                # on_merge | on_pr | manual | off
-roles:                                 # model, effort, max_turns per role; omitted = your session's
+roles:                                 # model, effort, max_turns per role; every role names its model
+  orchestrator: { model: sonnet }      # skills: ship, inbox, factory, spec review, decide, approve, rework, post-mortem, verify
+  ticketer:    { model: sonnet }       # skill: ticket
+  shaper:      { model: opus }         # skills: shape-spec, plan-product
+  writer:      { model: opus }         # skill: write-spec
+  planner:     { model: opus }         # skill: create-tasks
   prepare:     { model: haiku,  effort: low }
-  implementer: { effort: high, max_turns: 40 }
-  reworker:    { effort: high, max_turns: 40 }
+  implementer: { model: opus,   effort: high, max_turns: 40 }
+  reworker:    { model: opus,   effort: high, max_turns: 40 }
   gate:        { model: sonnet, effort: low }
   reviewer:    { model: sonnet, effort: medium }
   triage:      { model: haiku,  effort: low, enabled: false }
   approver:    { model: sonnet, enabled: false }
   critic:      { model: sonnet, effort: medium }
   analyst:     { model: sonnet, effort: medium }
-  discoverer:  { effort: high }
+  discoverer:  { model: opus,   effort: high }
 review:
   reviewers: [code, security, standards, compat]   # or { name: compat, model: opus }; custom: docs/agent/reviewers/<name>.md
   rounds: { max: 3, min: 1 }

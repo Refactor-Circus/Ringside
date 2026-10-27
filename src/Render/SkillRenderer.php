@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RefactorCircus\Ringside\Render;
 
+use RefactorCircus\Ringside\Config;
 use RefactorCircus\Ringside\Project;
 use RefactorCircus\Ringside\Standards\Resolution;
 use RefactorCircus\Ringside\Standards\Standard;
@@ -98,12 +99,30 @@ final class SkillRenderer
                 continue;
             }
 
-            $skills[$name] = Template::render('skills/workflow/'.basename($file), $vars);
+            $role = array_key_exists($name, Config::SKILL_ROLES) ? Config::SKILL_ROLES[$name] : 'orchestrator';
+            $skills[$name] = self::withModel(Template::render('skills/workflow/'.basename($file), $vars), $role === null ? [] : $project->config->role($role));
         }
 
         ksort($skills);
 
         return $skills;
+    }
+
+    /**
+     * Adds the role's model to a skill's frontmatter, so the skill runs on it
+     * whatever model the session started with.
+     *
+     * @param  array<string, mixed>  $role
+     */
+    private static function withModel(string $skill, array $role): string
+    {
+        $model = is_string($role['model'] ?? null) ? trim($role['model']) : '';
+
+        if ($model === '' || ! str_starts_with($skill, "---\n") || ($end = strpos($skill, "\n---\n", 4)) === false) {
+            return $skill;
+        }
+
+        return substr($skill, 0, $end)."\nmodel: {$model}".substr($skill, $end);
     }
 
     /**

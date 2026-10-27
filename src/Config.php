@@ -18,7 +18,23 @@ final readonly class Config
     public const array SEVERITIES = ['architectural', 'blocker', 'major', 'minor', 'nit'];
 
     /** @var list<string> */
-    public const array ROLES = ['prepare', 'implementer', 'reworker', 'gate', 'reviewer', 'triage', 'approver', 'critic', 'analyst', 'discoverer'];
+    public const array ROLES = ['orchestrator', 'ticketer', 'shaper', 'writer', 'planner', 'prepare', 'implementer', 'reworker', 'gate', 'reviewer', 'triage', 'approver', 'critic', 'analyst', 'discoverer'];
+
+    /**
+     * The role whose model each workflow skill runs on (frontmatter `model:`);
+     * any skill not listed runs on the orchestrator's, and null keeps the
+     * session's (inject-standards only loads reference into it).
+     *
+     * @var array<string, ?string>
+     */
+    public const array SKILL_ROLES = [
+        'ring-master-inject-standards' => null,
+        'ring-master-ticket' => 'ticketer',
+        'ring-master-shape-spec' => 'shaper',
+        'ring-master-plan-product' => 'shaper',
+        'ring-master-write-spec' => 'writer',
+        'ring-master-create-tasks' => 'planner',
+    ];
 
     /** @var list<string> */
     public const array REVIEWERS = ['code', 'security', 'standards', 'compat', 'ui', 'ux'];
@@ -76,16 +92,22 @@ final readonly class Config
                 'post_mortem' => 'on_merge',
             ],
             'roles' => [
+                // Every part of the workflow names its model: skills through SKILL_ROLES, factory and review agents directly.
+                'orchestrator' => ['model' => 'sonnet'],    // ship, inbox, factory, spec review, decide, approve, rework, post-mortem, verify
+                'ticketer' => ['model' => 'sonnet'],
+                'shaper' => ['model' => 'opus'],
+                'writer' => ['model' => 'opus'],
+                'planner' => ['model' => 'opus'],
                 'prepare' => ['model' => 'haiku', 'effort' => 'low'],
-                'implementer' => ['effort' => 'high', 'max_turns' => 40],
-                'reworker' => ['effort' => 'high', 'max_turns' => 40],
+                'implementer' => ['model' => 'opus', 'effort' => 'high', 'max_turns' => 40],
+                'reworker' => ['model' => 'opus', 'effort' => 'high', 'max_turns' => 40],
                 'gate' => ['model' => 'sonnet', 'effort' => 'low'],
                 'reviewer' => ['model' => 'sonnet', 'effort' => 'medium'],
                 'triage' => ['model' => 'haiku', 'effort' => 'low', 'enabled' => false],
                 'approver' => ['model' => 'sonnet', 'enabled' => false],
                 'critic' => ['model' => 'sonnet', 'effort' => 'medium'],
                 'analyst' => ['model' => 'sonnet', 'effort' => 'medium'],
-                'discoverer' => ['effort' => 'high'],
+                'discoverer' => ['model' => 'opus', 'effort' => 'high'],
             ],
             'review' => [
                 'reviewers' => ['code', 'security', 'standards', 'compat'],
