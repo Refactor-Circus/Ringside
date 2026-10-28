@@ -4,13 +4,16 @@ import { readFileSync } from 'node:fs'
 import { run, baseArgs, clean, built, green } from './harness.mjs'
 import { cwdProof } from '../../resources/workflows/gate-command.js'
 
-// Default responder: workspace ready, builds clean, gate green, reviews clean.
+// A clean preflight: nothing uncommitted, an origin remote, and ringside check applies.
+const preflightClean = { dirty: [], remote: true, check_applies: true }
+// Default responder: preflight clean, workspace ready, builds clean, gate green, reviews clean.
 const responder = (overrides = {}) => (call, calls) => {
   const l = call.label
   for (const [pattern, value] of Object.entries(overrides)) {
     if (new RegExp(pattern).test(l)) return typeof value === 'function' ? value(call, calls) : value
   }
-  if (l === 'prepare') return { ready: true, worktree: '/work/pkg--import' }
+  if (l === 'prepare') return { ready: true, worktree: '/work/pkg--import', ...preflightClean }
+  if (l === 'prepare setup') return { ready: true, worktree: '/work/pkg--import' }
   if (l.startsWith('group') || l.startsWith('rework')) return built
   if (l.startsWith('gate')) return green
   return clean
@@ -133,7 +136,7 @@ test('a single-package per-job job prepares its worktree with ringside worktrees
   const args = baseArgs({ config: { build: { parallel: false, max_concurrency: 2, worktree: { mode: 'per-job', setup } } } })
   const { calls } = await run('ring-master-factory', args, responder())
   const prompt = calls.find(c => c.label === 'prepare').prompt
-  assert.match(prompt, /From \/work\/pkg, run `vendor\/bin\/ringside worktrees 2026-10-23-1430-import --setup`/)
+  assert.match(prompt, /Run `composer --working-dir=\/work\/pkg exec ringside -- worktrees 2026-10-23-1430-import --setup`/)
   assert.match(prompt, /ready=true only if it exits 0/)
   assert.match(prompt, /non-zero exit, return ready=false with the command output in detail/)
   assert.match(prompt, /do not repair anything manually/)
@@ -169,7 +172,7 @@ test('a workspace job builds each group in its own package worktree and gates ev
   const { result, calls } = await run('ring-master-factory', workspaceArgs(), responder())
   assert.equal(result.status, 'approved')
   assert.deepEqual(result.packages, ['Keystone', 'Atrium'])
-  assert.match(calls.find(c => c.label === 'prepare').prompt, /ringside worktrees 2026-10-23-1430-import --setup/)
+  assert.match(calls.find(c => c.label === 'prepare').prompt, /ringside -- worktrees 2026-10-23-1430-import --setup/)
   assert.match(calls.find(c => c.label === 'group 1').prompt, /\.ring-master\/jobs\/2026-10-23-1430-import\/Keystone/)
   assert.match(calls.find(c => c.label === 'group 2').prompt, /\.ring-master\/jobs\/2026-10-23-1430-import\/Atrium/)
   assert.match(calls.find(c => c.label === 'group 2').prompt, /Atrium's own standards, which override.*atrium\/components\.md/)
@@ -276,7 +279,7 @@ test('parallel groups of a per-job package build at once in their own worktrees,
   }))
   assert.equal(result.status, 'approved')
   assert.equal(peak, 2, 'groups that share a file still run at once: each has its own worktree')
-  assert.match(calls.find(c => c.label === 'group worktrees 1,2').prompt, /ringside worktrees 2026-10-23-1430-import --groups=1,2 --setup/)
+  assert.match(calls.find(c => c.label === 'group worktrees 1,2').prompt, /ringside -- worktrees 2026-10-23-1430-import --groups=1,2 --setup/)
   assert.match(calls.find(c => c.label === 'group 2').prompt, /its own worktree \/work\/pkg--import--g2 \(branch ring-master\/2026-10-23-1430-import--g2/)
   assert.match(calls.find(c => c.label === 'group 2').prompt, /Commit your changes on ring-master\/2026-10-23-1430-import--g2/)
   const integrate = calls.find(c => c.label === 'integrate w1')
@@ -343,7 +346,7 @@ test('a replay rebuilds on its own worktree, keeps the real spec folder untouche
   assert.equal(result.replay, true)
   assert.equal(result.gate_red_rounds, 1)
   assert.equal(result.variants_winner, null)
-  assert.match(calls.find(c => c.label === 'prepare').prompt, /ringside worktrees 2026-10-23-1430-import --setup --replay --from=abc123/)
+  assert.match(calls.find(c => c.label === 'prepare').prompt, /ringside -- worktrees 2026-10-23-1430-import --setup --replay --from=abc123/)
   const group = calls.find(c => c.label === 'group 1').prompt
   assert.match(group, /Tasks: 1\.1 tests/, 'a replay builds even the tasks the real job ticked')
   assert.match(group, /do not tick tasks\.md/)
@@ -360,13 +363,15 @@ const variantArgs = (n = 3, extra = {}) => {
   return args
 }
 const gateFor = passed => ({ passed, findings: passed ? [] : [{ severity: 'blocker', summary: 'red' }], changed_files: ['src/A.php'], criteria: [{ n: 1, proven: true }] })
+// A variant builds every group's tasks, so a finished one reports them all done.
+const vbuilt = { ...built, done: ['1.1', '2.1'] }
 
 test('variants build the whole job several ways at once, each gated, and the judge picks the one to keep', async () => {
   let running = 0
   let peak = 0
   const { result, calls, logs, phases } = await run('ring-master-factory', variantArgs(), responder({
     '^variant worktrees': { ready: true },
-    '^variant \\d$': async () => { running++; peak = Math.max(peak, running); await new Promise(r => setTimeout(r, 5)); running--; return built },
+    '^variant \\d$': async () => { running++; peak = Math.max(peak, running); await new Promise(r => setTimeout(r, 5)); running--; return vbuilt },
     '^gate v1$': gateFor(true), '^gate v2$': gateFor(false), '^gate v3$': gateFor(true),
     '^judge$': { winner: 3, reasons: ['smaller diff'] },
     '^adopt': { merged: true },
@@ -376,7 +381,7 @@ test('variants build the whole job several ways at once, each gated, and the jud
   assert.equal(peak, 3)
   assert.ok(phases.includes('Variants'))
   assert.ok(!calls.some(c => /^group \d$/.test(c.label)), 'variants replace the group build')
-  assert.match(calls.find(c => c.label === 'variant worktrees 3').prompt, /ringside worktrees 2026-10-23-1430-import --variants=3 --setup/)
+  assert.match(calls.find(c => c.label === 'variant worktrees 3').prompt, /ringside -- worktrees 2026-10-23-1430-import --variants=3 --setup/)
   const v2 = calls.find(c => c.label === 'variant 2')
   assert.match(v2.prompt, /worktree \/work\/pkg--import--v2 \(branch ring-master\/2026-10-23-1430-import--v2/)
   assert.match(v2.prompt, /Follow the patterns already in this codebase/)
@@ -394,7 +399,7 @@ test('variants build the whole job several ways at once, each gated, and the jud
 test('without a usable verdict from the judge, the best gate result wins', async () => {
   const { result } = await run('ring-master-factory', variantArgs(2), responder({
     '^variant worktrees': { ready: true },
-    '^variant \\d$': built,
+    '^variant \\d$': vbuilt,
     '^gate v1$': gateFor(false), '^gate v2$': gateFor(true),
     '^judge$': { winner: 7, reasons: ['no such variant'] },
     '^adopt': { merged: true },
@@ -417,6 +422,514 @@ test('a workspace job ignores variants and builds once', async () => {
   const { calls, logs } = await run('ring-master-factory', args, responder())
   assert.ok(!calls.some(c => c.label.startsWith('variant')))
   assert.ok(logs.some(l => /only a single package with per-job worktrees builds variants/.test(l)))
+})
+
+// --- ringside check stays out of Ringside's own gate (D-009, tooling/verification-gate) ---
+
+// The package is named after the job root's folder, as Job.php names it; a Windows root uses backslashes.
+const ringsideJob = root => ({ branch: 'ring-master/2026-10-23-1430-import', worktree: '../Ringside--2026-10-23-1430-import', root })
+
+test('the gate of the Ringside package never runs ringside check; other packages still do', async () => {
+  for (const root of ['/work/Ringside', 'C:\\work\\Ringside', '/work/ringside/']) {
+    const { result, calls } = await run('ring-master-factory', baseArgs({ job: ringsideJob(root) }), responder())
+    assert.equal(result.status, 'approved', root)
+    const prompt = calls.find(c => c.label === 'gate r1').prompt
+    assert.ok(prompt.includes(`Run the gate in /work/pkg--import: \`${cwdProof('/work/pkg--import', 'composer test')}\` and \`${cwdProof('/work/pkg--import', 'vendor/bin/pint --test')}\`.`), root)
+    assert.doesNotMatch(prompt, /ringside check/, root)
+  }
+  for (const root of ['/work/pkg', '/work/Ringside-app', '/work/Keystone']) {
+    const { calls } = await run('ring-master-factory', baseArgs({ job: ringsideJob(root) }), responder())
+    assert.match(calls.find(c => c.label === 'gate r1').prompt, /`composer --working-dir='\/work\/pkg--import' exec ringside check`/, root)
+  }
+})
+
+test('the variant gates of the Ringside package never run ringside check; other packages still do', async () => {
+  const variants = { '^variant worktrees': { ready: true }, '^variant \\d$': vbuilt, '^gate v\\d$': gateFor(true), '^judge$': { winner: 1, reasons: ['first'] }, '^adopt': { merged: true } }
+  const ringside = await run('ring-master-factory', variantArgs(2, { job: ringsideJob('/work/Ringside') }), responder(variants))
+  assert.equal(ringside.result.status, 'approved')
+  for (const label of ['gate v1', 'gate v2', 'gate r1']) {
+    const prompt = ringside.calls.find(c => c.label === label).prompt
+    assert.doesNotMatch(prompt, /ringside check/, label)
+  }
+  assert.ok(ringside.calls.find(c => c.label === 'gate v1').prompt.includes(`run \`${cwdProof('/work/pkg--import--v1', 'composer test')}\` and \`${cwdProof('/work/pkg--import--v1', 'vendor/bin/pint --test')}\`. `))
+  const other = await run('ring-master-factory', variantArgs(2), responder(variants))
+  assert.match(other.calls.find(c => c.label === 'gate v2').prompt, /`composer --working-dir='\/work\/pkg--import--v2' exec ringside check`/)
+})
+
+// --- A build agent that returns no result: salvage, then one retry of what is left ---
+
+const recoverRoles = { implementer: { model: 'opus', effort: 'high' }, reworker: { model: 'sonnet', effort: 'medium' } }
+const twoTasks = (extra = {}, done = false) => {
+  const args = withRoles(recoverRoles, extra)
+  args.waves = [[{ n: 1, name: 'Data', files: ['src/A.php', 'tests/ATest.php'], criteria: [1], tasks: [{ id: '1.1', text: 'tests', done }, { id: '1.2', text: 'code', done }] }]]
+  return args
+}
+const salvaged = done => ({ done, files: ['src/A.php'], tests: 'green', deviations: [], decisions: [] })
+const labels = calls => calls.map(c => c.label)
+const ask = { question: 'Keep the old importer?', options: ['keep', 'drop'], recommendation: 'keep' }
+
+test('a group that returns no result is salvaged on the reworker role, the rest retried, and the run reaches the gate', async () => {
+  const { result, calls } = await run('ring-master-factory', twoTasks(), responder({
+    '^group 1$': null,
+    '^salvage g1$': salvaged(['1.1']),
+    '^tasks g1$': { done: ['1.1'] },
+  }))
+  assert.equal(result.status, 'approved')
+  assert.deepEqual(labels(calls).slice(0, 6), ['prepare', 'group 1', 'salvage g1', 'tasks g1', 'group 1 retry', 'gate r1'])
+  const group = calls.find(c => c.label === 'group 1')
+  const salvage = calls.find(c => c.label === 'salvage g1')
+  assert.equal(salvage.opts.agentType, 'ring-master-implementer')
+  assert.equal(salvage.opts.phase, 'Build')
+  assert.equal(salvage.opts.model, 'sonnet', 'the salvage runs on the reworker role, not the implementer')
+  assert.equal(salvage.opts.effort, 'medium')
+  assert.equal(group.opts.model, 'opus')
+  assert.deepEqual(salvage.opts.schema, group.opts.schema, 'the salvage returns BUILT')
+  assert.deepEqual(salvage.opts.schema.required, ['done', 'decisions'])
+  const tasks = calls.find(c => c.label === 'tasks g1')
+  assert.equal(tasks.opts.model, 'haiku', 'the tasks.md cross-check is a read-only prepare call')
+  assert.match(tasks.prompt, /\/work\/pkg\/docs\/agent\/specs\/2026-10-23-1430-import\/tasks\.md/)
+  const retry = calls.find(c => c.label === 'group 1 retry')
+  assert.equal(retry.opts.agentType, 'ring-master-implementer')
+  assert.equal(retry.opts.model, 'opus')
+  assert.match(retry.prompt, /Tasks: 1\.2 code\./, 'the non-replay retry lists only the remaining task')
+  assert.doesNotMatch(retry.prompt, /1\.1 tests/)
+})
+
+test('a salvage or retry that returns no result escalates, with the null still in built', async () => {
+  const twice = await run('ring-master-factory', twoTasks(), responder({
+    '^group 1$': null,
+    '^salvage g1$': salvaged([]),
+    '^tasks g1$': { done: [] },
+    '^group 1 retry$': null,
+  }))
+  assert.equal(twice.result.status, 'escalated')
+  assert.equal(twice.result.stage, 'build')
+  assert.deepEqual(twice.result.reasons, ['a build agent failed'])
+  assert.deepEqual(twice.result.built, [null])
+  assert.deepEqual(labels(twice.calls), ['prepare', 'group 1', 'salvage g1', 'tasks g1', 'group 1 retry'], 'no escalation before the salvage and the retry have returned')
+
+  const lost = await run('ring-master-factory', twoTasks(), responder({ '^group 1$': null, '^salvage g1$': null }))
+  assert.equal(lost.result.status, 'escalated')
+  assert.deepEqual(lost.result.reasons, ['a build agent failed'])
+  assert.deepEqual(lost.result.built, [null])
+  assert.deepEqual(labels(lost.calls), ['prepare', 'group 1', 'salvage g1'])
+})
+
+test('a replay retry lists only the remaining ids and trusts the salvage, since tasks.md is never ticked', async () => {
+  const args = twoTasks({ replay: true }, true)
+  const { result, calls } = await run('ring-master-factory', args, responder({ '^group 1$': null, '^salvage g1$': salvaged(['1.1']) }))
+  assert.equal(result.status, 'approved')
+  assert.ok(!calls.some(c => c.label === 'tasks g1'), 'no tasks.md cross-check in a replay')
+  const retry = calls.find(c => c.label === 'group 1 retry')
+  assert.match(retry.prompt, /Tasks: 1\.2 code\./)
+  assert.doesNotMatch(retry.prompt, /1\.1 tests/)
+  const salvage = calls.find(c => c.label === 'salvage g1').prompt
+  assert.match(salvage, /do not tick tasks\.md/)
+  assert.match(salvage, /specs\/2026-10-23-1430-import\/replay\/build\.md/)
+})
+
+test('a bogus, empty or disputed done list retries every task not provably done', async () => {
+  const retried = async overrides => {
+    const { calls } = await run('ring-master-factory', twoTasks(), responder({ '^group 1$': null, ...overrides }))
+    return calls.find(c => c.label === 'group 1 retry').prompt
+  }
+  const bogus = await retried({ '^salvage g1$': salvaged(['9.9', '1.1 tests']), '^tasks g1$': { done: [] } })
+  assert.match(bogus, /Tasks: 1\.1 tests; 1\.2 code\./)
+  const empty = await retried({ '^salvage g1$': salvaged([]), '^tasks g1$': null })
+  assert.match(empty, /Tasks: 1\.1 tests; 1\.2 code\./)
+  // The salvage claims both; tasks.md ticks only 1.1: the larger unfinished set wins.
+  const disputed = await retried({ '^salvage g1$': salvaged(['1.1', '1.2']), '^tasks g1$': { done: ['1.1', '7.7'] } })
+  assert.match(disputed, /Tasks: 1\.2 code\./)
+  assert.doesNotMatch(disputed, /1\.1 tests/)
+})
+
+test('a salvage that leaves nothing to do is not retried', async () => {
+  const { result, calls } = await run('ring-master-factory', twoTasks(), responder({
+    '^group 1$': null,
+    '^salvage g1$': salvaged(['1.1', '1.2']),
+    '^tasks g1$': { done: ['1.1', '1.2'] },
+  }))
+  assert.equal(result.status, 'approved')
+  assert.ok(!calls.some(c => c.label === 'group 1 retry'))
+})
+
+test('a build result that leaves tasks undone retries them without a salvage (D-003)', async () => {
+  const { result, calls } = await run('ring-master-factory', twoTasks(), responder({
+    '^group 1$': { ...built, done: ['1.1'] },
+    '^tasks g1$': { done: ['1.1'] },
+  }))
+  assert.equal(result.status, 'approved')
+  assert.ok(!calls.some(c => c.label.startsWith('salvage')))
+  assert.match(calls.find(c => c.label === 'group 1 retry').prompt, /Tasks: 1\.2 code\./)
+})
+
+test('a salvage that finds a lock or a merge in progress returns blocked, and the job escalates with its reason', async () => {
+  const { result, calls } = await run('ring-master-factory', twoTasks(), responder({
+    '^group 1$': null,
+    '^salvage g1$': { ...salvaged([]), blocked: 'index.lock is held by another git process' },
+  }))
+  assert.equal(result.status, 'escalated')
+  assert.equal(result.stage, 'build')
+  assert.deepEqual(result.reasons, ['index.lock is held by another git process'])
+  assert.ok(!calls.some(c => c.label === 'group 1 retry' || c.label === 'tasks g1'))
+
+  const retryBlocked = await run('ring-master-factory', twoTasks(), responder({
+    '^group 1$': null,
+    '^salvage g1$': salvaged([]),
+    '^group 1 retry$': { ...salvaged([]), blocked: 'the API is missing' },
+  }))
+  assert.equal(retryBlocked.result.status, 'escalated')
+  assert.deepEqual(retryBlocked.result.reasons, ['the API is missing'])
+})
+
+test('decisions from a salvage or a retry end the run as needs-decision', async () => {
+  const fromSalvage = await run('ring-master-factory', twoTasks(), responder({ '^group 1$': null, '^salvage g1$': { ...salvaged([]), decisions: [ask] } }))
+  assert.equal(fromSalvage.result.status, 'needs-decision')
+  assert.equal(fromSalvage.result.stage, 'build')
+  assert.deepEqual(fromSalvage.result.decisions.map(d => d.question), [ask.question])
+  assert.ok(!fromSalvage.calls.some(c => c.label === 'group 1 retry'))
+  assert.ok(!fromSalvage.calls.some(c => c.label.startsWith('gate')))
+
+  const fromRetry = await run('ring-master-factory', twoTasks(), responder({
+    '^group 1$': null,
+    '^salvage g1$': salvaged(['1.1']),
+    '^group 1 retry$': { ...built, done: [], decisions: [ask] },
+  }))
+  assert.equal(fromRetry.result.status, 'needs-decision')
+  assert.deepEqual(fromRetry.result.decisions.map(d => d.question), [ask.question])
+})
+
+test('when every group of a wave returns no result, the job escalates straight away without a salvage', async () => {
+  const { result, calls, logs } = await run('ring-master-factory', parallelArgs(), responder({
+    '^group worktrees': { ready: true },
+    '^group \\d$': null,
+  }))
+  assert.equal(result.status, 'escalated')
+  assert.equal(result.stage, 'build')
+  assert.deepEqual(result.reasons, ['a build agent failed'])
+  assert.deepEqual(result.built, [null, null])
+  assert.ok(!calls.some(c => c.label.startsWith('salvage') || c.label.endsWith('retry') || c.label.startsWith('integrate')))
+  assert.ok(logs.some(l => /every group .* returned no result/i.test(l)))
+})
+
+test('the salvage prompt checks for locks, stays inside the group files, tests through composer and commits as salvaged', async () => {
+  const { calls } = await run('ring-master-factory', twoTasks(), responder({ '^group 1$': null, '^salvage g1$': salvaged(['1.1', '1.2']), '^tasks g1$': { done: ['1.1', '1.2'] } }))
+  const prompt = calls.find(c => c.label === 'salvage g1').prompt
+  assert.ok(prompt.includes('.git/index.lock'), 'checks for an index lock')
+  assert.match(prompt, /merge or rebase in progress/)
+  assert.match(prompt, /stop and return blocked/)
+  assert.match(prompt, /never force/)
+  assert.ok(prompt.includes("`git -C /work/pkg--import status --porcelain -- 'src/A.php' 'tests/ATest.php'`"))
+  assert.ok(prompt.includes("`git -C /work/pkg--import diff -- 'src/A.php' 'tests/ATest.php'`"))
+  assert.match(prompt, /1\.1 tests; 1\.2 code/, 'compares the changes with the group tasks')
+  assert.ok(prompt.includes('`composer --working-dir=/work/pkg--import exec pest`'))
+  assert.ok(prompt.includes('"2026-10-23-1430-import: group 1 Data (salvaged)"'))
+  assert.match(prompt, /on ring-master\/2026-10-23-1430-import with the message/)
+  assert.ok(prompt.includes('tick only the finished tasks in /work/pkg/docs/agent/specs/2026-10-23-1430-import/tasks.md'))
+  assert.ok(prompt.includes('"## Group 1 (salvaged)" note to /work/pkg/docs/agent/specs/2026-10-23-1430-import/build.md'))
+  assert.match(prompt, /Return done with the ids of the finished tasks only/)
+  assert.match(prompt, /Do not use blocked for unfinished tasks/)
+})
+
+test('a salvage in a parallel group worktree uses that tree and skips the test run the build skipped', async () => {
+  const { result, calls } = await run('ring-master-factory', parallelArgs(), responder({
+    '^group worktrees': { ready: true },
+    '^group 1$': null,
+    '^salvage g1$': salvaged([]),
+    '^integrate': { merged: true, conflicts: [] },
+  }))
+  assert.equal(result.status, 'approved')
+  const prompt = calls.find(c => c.label === 'salvage g1').prompt
+  assert.ok(prompt.includes("`git -C /work/pkg--import--g1 status --porcelain -- 'src/A.php'`"))
+  assert.ok(prompt.includes("`git -C /work/pkg--import--g1 diff -- 'src/A.php'`"))
+  assert.match(prompt, /on ring-master\/2026-10-23-1430-import--g1 with the message/)
+  assert.match(prompt, /Do not run the test suite; the gate runs it after the build/)
+  assert.doesNotMatch(prompt, /composer --working-dir=\/work/)
+  assert.doesNotMatch(prompt, /Run the test command/)
+  assert.ok(!calls.some(c => c.label === 'group 1 retry' || c.label === 'tasks g1'), 'a group with no tasks left is not retried')
+  assert.ok(calls.findIndex(c => c.label === 'salvage g1') < calls.findIndex(c => c.label === 'integrate w1'))
+})
+
+test('a variant that returns no result is salvaged in its own worktree and retried before it counts as failed', async () => {
+  const args = variantArgs(2)
+  args.config.roles.reworker = { model: 'sonnet', effort: 'medium' }
+  const { result, calls } = await run('ring-master-factory', args, responder({
+    '^variant worktrees': { ready: true },
+    '^variant 1$': null,
+    '^variant 2$': vbuilt,
+    '^salvage v1$': salvaged(['1.1']),
+    '^variant 1 retry$': { ...built, done: ['2.1'] },
+    '^gate v\\d$': gateFor(true),
+    '^judge$': { winner: 1, reasons: ['smaller diff'] },
+    '^adopt': { merged: true },
+  }))
+  assert.equal(result.status, 'approved')
+  assert.equal(result.variants_winner, 1)
+  const salvage = calls.find(c => c.label === 'salvage v1')
+  assert.equal(salvage.opts.agentType, 'ring-master-implementer')
+  assert.equal(salvage.opts.phase, 'Variants')
+  assert.equal(salvage.opts.model, 'sonnet', 'the variant salvage runs on the reworker role, not the variant model')
+  assert.deepEqual(salvage.opts.schema.required, ['done', 'decisions'])
+  assert.ok(salvage.prompt.includes('`git -C /work/pkg--import--v1 status --porcelain`'))
+  assert.ok(salvage.prompt.includes('"2026-10-23-1430-import: variant 1 (salvaged)"'))
+  assert.match(salvage.prompt, /Do not tick tasks\.md/)
+  assert.ok(!calls.some(c => c.label === 'tasks v1'), 'variants never tick tasks.md, so there is no cross-check')
+  const retry = calls.find(c => c.label === 'variant 1 retry')
+  assert.match(retry.prompt, /Tasks, in this order: 2\.1 screen \(group 2: Screen\)\./)
+  assert.doesNotMatch(retry.prompt, /1\.1 tests/)
+  assert.ok(calls.indexOf(retry) < calls.findIndex(c => c.label === 'gate v1'))
+
+  const failed = await run('ring-master-factory', variantArgs(2), responder({ '^variant worktrees': { ready: true }, '^variant \\d$': null, '^salvage v\\d$': null }))
+  assert.equal(failed.result.status, 'escalated')
+  assert.equal(failed.result.stage, 'variants')
+  assert.deepEqual(labels(failed.calls).filter(l => l.startsWith('salvage')).sort(), ['salvage v1', 'salvage v2'])
+})
+
+test('a variant that returns a normal result is kept as it is, even with an empty done list: only a null one is recovered', async () => {
+  const { result, calls } = await run('ring-master-factory', variantArgs(2), responder({
+    '^variant worktrees': { ready: true },
+    '^variant \\d$': { ...built, done: [] },
+    '^gate v\\d$': gateFor(true),
+    '^judge$': { winner: 2, reasons: ['smaller diff'] },
+    '^adopt': { merged: true },
+  }))
+  assert.equal(result.status, 'approved')
+  assert.equal(result.variants_winner, 2)
+  assert.ok(!calls.some(c => /^salvage v\d$/.test(c.label)), 'no salvage for a variant that returned a result')
+  assert.ok(!calls.some(c => /^variant \d retry$/.test(c.label)), 'no retry for a variant that returned a result')
+  assert.ok(!calls.some(c => /^tasks v\d$/.test(c.label)))
+  assert.deepEqual(labels(calls).filter(l => /^gate v\d$/.test(l)).sort(), ['gate v1', 'gate v2'])
+})
+
+test('a rework that returns no result is still ignored, with no salvage', async () => {
+  const { result, calls } = await run('ring-master-factory', baseArgs(), responder({ '^code r1$': { findings: [major], decisions: [] }, '^rework r1$': null }))
+  assert.equal(result.status, 'approved')
+  assert.ok(calls.some(c => c.label === 'code r2'))
+  assert.ok(!calls.some(c => c.label.startsWith('salvage')))
+})
+
+// --- cwd-proof ringside calls and the Prepare preflight ----------------------
+
+const DIRTY_ASK = 'Commit or stash these main changes before the build?'
+const REMOTE_ASK = 'No origin remote found. What is the remote URL for the PR?'
+const NO_CD = 'never `cd` into the worktree first'
+// The Prepare agent held back `worktrees --setup` and left the preflight to the script.
+const held = (preflight = {}) => ({ ready: false, ...preflightClean, ...preflight })
+// A job that opens a PR: not a replay, and the config names a host.
+const prArgs = (extra = {}) => baseArgs({ ...extra, config: { host: { base: 'main', provider: 'github' } } })
+// The inline code spans of a prompt, so assertions read commands, not prose.
+const codeSpans = prompt => prompt.split('`').filter((_, i) => i % 2 === 1)
+const ringsideCalls = prompt => codeSpans(prompt).filter(s => /\bringside\b/.test(s))
+const RINGSIDE_LABELS = /^(prepare|prepare setup|variant worktrees \d+|adopt v\d+|group worktrees [\d,]+|integrate w\d+)$/
+
+// Every kind of run that sends a Prepare, variant, group-worktree or removal prompt.
+const everyRun = async () => [
+  await run('ring-master-factory', baseArgs(), responder()),
+  await run('ring-master-factory', baseArgs(), responder({ '^prepare$': held({ dirty: [' M README.md'] }) })),
+  await run('ring-master-factory', variantArgs(2), responder({
+    '^variant worktrees': { ready: true },
+    '^variant \\d$': built,
+    '^gate v\\d$': gateFor(true),
+    '^judge$': { winner: 1, reasons: ['smaller diff'] },
+    '^adopt': { merged: true },
+  })),
+  await run('ring-master-factory', parallelArgs(), responder({ '^group worktrees': { ready: true }, '^integrate': { merged: true, conflicts: [] } })),
+  await run('ring-master-factory', workspaceArgs(), responder()),
+  await run('ring-master-factory', baseArgs({ replay: true }), responder({ '^prepare$': { ready: true, worktree: '/work/pkg--import--replay' } })),
+]
+
+test('no prompt runs vendor/bin/ringside; every Prepare, variant, group-worktree and removal call goes through composer --working-dir, never after a cd', async () => {
+  const runs = await everyRun()
+  const calls = runs.flatMap(r => r.calls)
+  for (const c of calls) assert.ok(!c.prompt.includes('vendor/bin/ringside'), `${c.label} runs vendor/bin/ringside`)
+  const scoped = calls.filter(c => RINGSIDE_LABELS.test(c.label))
+  for (const label of ['prepare', 'prepare setup', 'variant worktrees 2', 'adopt v1', 'group worktrees 1,2', 'integrate w1']) {
+    assert.ok(scoped.some(c => c.label === label), `a ${label} prompt was sent`)
+  }
+  for (const c of scoped) {
+    const uses = ringsideCalls(c.prompt)
+    assert.ok(uses.length > 0, `${c.label} calls ringside`)
+    for (const u of uses) assert.ok(u.startsWith('composer --working-dir=/work/pkg exec ringside -- '), `${c.label}: ${u}`)
+    assert.ok(c.prompt.includes(NO_CD), `${c.label} tells the agent never to cd first`)
+  }
+  assert.match(calls.find(c => c.label === 'adopt v1').prompt, /`composer --working-dir=\/work\/pkg exec ringside -- worktrees 2026-10-23-1430-import --remove-variants`/)
+  assert.match(calls.find(c => c.label === 'integrate w1').prompt, /`composer --working-dir=\/work\/pkg exec ringside -- worktrees 2026-10-23-1430-import --remove-groups`/)
+})
+
+test('the Prepare prompt runs the preflight as separate Bash calls ahead of worktrees --setup, and holds back --setup on dirt or no remote', async () => {
+  const { calls } = await run('ring-master-factory', baseArgs(), responder())
+  const prompt = calls.find(c => c.label === 'prepare').prompt
+  const setup = prompt.indexOf('`composer --working-dir=/work/pkg exec ringside -- worktrees 2026-10-23-1430-import --setup`')
+  assert.ok(setup > 0)
+  for (const step of ['`git -C /work/pkg status --porcelain`', '`git -C /work/pkg remote get-url origin`', '/work/pkg/docs/agent/standards.index.yml', '/work/pkg/ring-master.yml']) {
+    assert.ok(prompt.includes(step), step)
+    assert.ok(prompt.indexOf(step) < setup, `${step} comes before worktrees --setup`)
+  }
+  assert.match(prompt, /each command as its own Bash call/)
+  assert.match(prompt, /If dirty is non-empty or remote is false, return ready=false[^\n]*do not run `worktrees --setup`/)
+  assert.match(prompt, /exactly as printed/)
+})
+
+test('the PREPARED schema accepts dirty, remote and check_applies, and a clean preflight builds', async () => {
+  const { result, calls } = await run('ring-master-factory', baseArgs(), responder())
+  const { properties } = calls.find(c => c.label === 'prepare').opts.schema
+  assert.deepEqual(properties.dirty, { type: 'array', items: { type: 'string' } })
+  assert.deepEqual(properties.remote, { type: 'boolean' })
+  assert.deepEqual(properties.check_applies, { type: 'boolean' })
+  assert.equal(result.status, 'approved')
+  assert.deepEqual(calls.map(c => c.label).slice(0, 2), ['prepare', 'group 1'])
+})
+
+test('a replay has no preflight and is never stopped by one', async () => {
+  const replayed = await run('ring-master-factory', prArgs({ replay: true }), responder({ '^prepare$': { ready: true, worktree: '/work/pkg--import--replay', dirty: [' M src/A.php'], remote: false } }))
+  const prompt = replayed.calls.find(c => c.label === 'prepare').prompt
+  assert.doesNotMatch(prompt, /status --porcelain/)
+  assert.doesNotMatch(prompt, /remote get-url/)
+  assert.doesNotMatch(prompt, /standards\.index\.yml/)
+  assert.equal(replayed.result.status, 'approved')
+  // A legacy result, without the three fields, reads as the safe values on a replay: ringside check still runs.
+  const legacy = await run('ring-master-factory', baseArgs({ replay: true }), responder({ '^prepare$': { ready: true, worktree: '/work/pkg--import--replay' } }))
+  assert.equal(legacy.result.status, 'approved')
+  assert.match(legacy.calls.find(c => c.label === 'gate r1').prompt, /exec ringside check/)
+})
+
+const stopsOnDirty = async (lines, files, args = baseArgs()) => {
+  const { result, calls } = await run('ring-master-factory', args, responder({ '^prepare$': held({ dirty: lines }) }))
+  assert.equal(result.status, 'needs-decision')
+  assert.equal(result.stage, 'prepare')
+  assert.equal(result.decisions.length, 1)
+  assert.equal(result.decisions[0].question, DIRTY_ASK)
+  assert.deepEqual(result.dirty, files)
+  for (const f of files) assert.ok(result.decisions[0].evidence.includes(f), `the ASK lists ${f}`)
+  assert.deepEqual(calls.map(c => c.label), ['prepare'], 'no build or group agent call')
+}
+
+test('dirt on a file a task group lists stops at prepare with the dirty ASK and the files', async () => {
+  await stopsOnDirty([' M src/A.php', '?? notes.txt'], ['src/A.php'])
+  await stopsOnDirty(['MM src/A.php'], ['src/A.php'])
+  await stopsOnDirty(['R  src/Old.php -> src/A.php'], ['src/A.php'])
+})
+
+test('an untracked directory that holds a listed file stops at prepare (directory prefix)', async () => {
+  const args = baseArgs()
+  args.waves[0][0].files = ['src/Import/Reader.php']
+  await stopsOnDirty(['?? src/Import/'], ['src/Import/'], args)
+  await stopsOnDirty(['?? src/'], ['src/'], args)
+})
+
+test('other jobs\' spec folders never stop a build: sessions write their reports into the main checkout', async () => {
+  const dirty = [' M docs/agent/specs/2026-10-01-0900-other/spec.md', '?? docs/agent/specs/2026-10-02-1000-new/', ' M docs/agent/specs/2026-10-23-1430-import/meta.yml', '?? .ringside-pr-body.md']
+  const { result, calls } = await run('ring-master-factory', baseArgs(), responder({ '^prepare$': held({ dirty }) }))
+  assert.equal(result.status, 'approved')
+  assert.ok(!calls.some(c => c.label === 'prepare' && result.decisions))
+  assert.deepEqual(calls.map(c => c.label).slice(0, 3), ['prepare', 'prepare setup', 'group 1'])
+})
+
+test('dirt that matches no listed file, only the job\'s own spec folder, or a group with no files lets the build go ahead', async () => {
+  const args = baseArgs()
+  args.waves = [[
+    { n: 1, name: 'Data', files: ['src/A.php'], criteria: [1], tasks: [{ id: '1.1', text: 'tests', done: false }] },
+    { n: 2, name: 'Docs', files: [], criteria: [], tasks: [{ id: '2.1', text: 'docs', done: false }] },
+  ]]
+  const dirty = [' M docs/agent/specs/2026-10-23-1430-import/meta.yml', '?? docs/agent/specs/2026-10-23-1430-import/round-1/', ' M src/B.php', ' M docs/agent/tickets/T-002.md']
+  const { result, calls } = await run('ring-master-factory', args, responder({ '^prepare$': held({ dirty }) }))
+  assert.equal(result.status, 'approved')
+  assert.deepEqual(calls.map(c => c.label).slice(0, 4), ['prepare', 'prepare setup', 'group 1', 'group 2'])
+  const setup = calls.find(c => c.label === 'prepare setup').prompt
+  assert.match(setup, /`composer --working-dir=\/work\/pkg exec ringside -- worktrees 2026-10-23-1430-import --setup`/)
+  assert.doesNotMatch(setup, /status --porcelain/)
+})
+
+test('no origin remote stops at prepare with its ASK when the job opens a PR', async () => {
+  const { result, calls } = await run('ring-master-factory', prArgs(), responder({ '^prepare$': held({ remote: false, detail: 'error: No such remote \'origin\'' }) }))
+  assert.equal(result.status, 'needs-decision')
+  assert.equal(result.stage, 'prepare')
+  assert.equal(result.decisions.length, 1)
+  assert.equal(result.decisions[0].question, REMOTE_ASK)
+  assert.deepEqual(calls.map(c => c.label), ['prepare'], 'no build call')
+})
+
+test('a job that never opens a PR ignores a missing remote', async () => {
+  const { result, calls } = await run('ring-master-factory', baseArgs(), responder({ '^prepare$': held({ remote: false }) }))
+  assert.equal(result.status, 'approved')
+  assert.deepEqual(calls.map(c => c.label).slice(0, 3), ['prepare', 'prepare setup', 'group 1'])
+})
+
+test('dirty main and no remote raise only the dirty ASK', async () => {
+  const { result, calls } = await run('ring-master-factory', prArgs(), responder({ '^prepare$': held({ dirty: [' M src/A.php'], remote: false }) }))
+  assert.equal(result.status, 'needs-decision')
+  assert.deepEqual(result.decisions.map(d => d.question), [DIRTY_ASK])
+  assert.deepEqual(calls.map(c => c.label), ['prepare'])
+})
+
+test('a non-replay Prepare result that omits a preflight field is a failed preflight', async () => {
+  for (const omitted of [{ ready: true, worktree: '/work/pkg--import' }, { ready: true, worktree: '/work/pkg--import', dirty: [], remote: true }]) {
+    const { result, calls } = await run('ring-master-factory', baseArgs(), responder({ '^prepare$': omitted }))
+    assert.equal(result.status, 'needs-decision')
+    assert.equal(result.stage, 'prepare')
+    assert.equal(result.decisions.length, 1)
+    assert.match(result.decisions[0].evidence, /check_applies/)
+    assert.deepEqual(calls.map(c => c.label), ['prepare'], 'no build call')
+  }
+})
+
+test('a Prepare that fails its setup with a clean preflight still escalates', async () => {
+  const { result, calls } = await run('ring-master-factory', baseArgs(), responder({ '^prepare$': held({ detail: 'composer install failed' }) }))
+  assert.equal(result.status, 'escalated')
+  assert.equal(result.stage, 'prepare')
+  assert.equal(result.detail, 'composer install failed')
+  assert.deepEqual(calls.map(c => c.label), ['prepare'])
+  const setupFails = await run('ring-master-factory', baseArgs(), responder({ '^prepare$': held({ dirty: ['?? notes.txt'] }), '^prepare setup$': { ready: false, detail: 'worktree add failed' } }))
+  assert.equal(setupFails.result.status, 'escalated')
+  assert.equal(setupFails.result.detail, 'worktree add failed')
+})
+
+const variantRun = prepare => run('ring-master-factory', variantArgs(2), responder({
+  '^prepare$': prepare,
+  '^variant worktrees': { ready: true },
+  '^variant \\d$': built,
+  '^gate v\\d$': gateFor(true),
+  '^judge$': { winner: 1, reasons: ['smaller diff'] },
+  '^adopt': { merged: true },
+}))
+
+test('check_applies false drops ringside check from both gate prompts and logs it', async () => {
+  const { result, calls, logs } = await variantRun({ ready: true, worktree: '/work/pkg--import', ...preflightClean, check_applies: false, detail: 'missing ring-master.yml' })
+  assert.equal(result.status, 'approved')
+  for (const label of ['gate v1', 'gate v2', 'gate r1']) assert.doesNotMatch(calls.find(c => c.label === label).prompt, /ringside check/, label)
+  assert.ok(logs.some(l => /ringside check/.test(l) && /dropped/.test(l) && /ring-master\.yml/.test(l)), logs.join('\n'))
+  const single = await run('ring-master-factory', baseArgs(), responder({ '^prepare$': { ready: true, worktree: '/work/pkg--import', ...preflightClean, check_applies: false } }))
+  assert.doesNotMatch(single.calls.find(c => c.label === 'gate r1').prompt, /ringside check/)
+  assert.ok(single.logs.some(l => /ringside check/.test(l) && /dropped/.test(l)))
+})
+
+test('a clean preflight keeps ringside check in both gate prompts', async () => {
+  const { calls, logs } = await variantRun({ ready: true, worktree: '/work/pkg--import', ...preflightClean })
+  assert.match(calls.find(c => c.label === 'gate v1').prompt, /`composer --working-dir='\/work\/pkg--import--v1' exec ringside check`/)
+  assert.match(calls.find(c => c.label === 'gate r1').prompt, /`composer --working-dir='\/work\/pkg--import' exec ringside check`/)
+  assert.ok(!logs.some(l => /dropped/.test(l)))
+})
+
+test('a workspace job runs the preflight in each package folder and aggregates the results', async () => {
+  const { calls } = await run('ring-master-factory', workspaceArgs(), responder())
+  const prompt = calls.find(c => c.label === 'prepare').prompt
+  const setup = prompt.indexOf('worktrees 2026-10-23-1430-import --setup')
+  for (const p of ['Keystone', 'Atrium']) {
+    for (const step of [`\`git -C /work/pkg/${p} status --porcelain\``, `\`git -C /work/pkg/${p} remote get-url origin\``, `/work/pkg/${p}/ring-master.yml`, `/work/pkg/${p}/docs/agent/standards.index.yml`]) {
+      assert.ok(prompt.includes(step), step)
+      assert.ok(prompt.indexOf(step) < setup, `${step} comes before worktrees --setup`)
+    }
+  }
+  assert.match(prompt, /prefixed with its package folder and a colon/)
+  // Each package's dirt is matched against that package's groups only.
+  await stopsOnDirty(['Keystone: M src/Importer.php', 'Atrium:?? scratch.txt', 'Atrium: M src/Importer.php'], ['Keystone/src/Importer.php'], workspaceArgs())
+  const unrelated = await run('ring-master-factory', workspaceArgs(), responder({ '^prepare$': held({ dirty: ['Atrium: M src/Importer.php'] }) }))
+  assert.equal(unrelated.result.status, 'approved')
+  const pr = workspaceArgs()
+  pr.config.host = { base: 'main', provider: 'github' }
+  const noRemote = await run('ring-master-factory', pr, responder({ '^prepare$': held({ remote: false, detail: 'Atrium has no origin remote' }) }))
+  assert.deepEqual(noRemote.result.decisions.map(d => d.question), [REMOTE_ASK])
+  assert.deepEqual(noRemote.calls.map(c => c.label), ['prepare'])
 })
 
 // cwd-proof gate commands (resources/workflows/gate-command.js, D-007, D-008, D-010, D-011).

@@ -100,9 +100,9 @@ final readonly class Config
                 'planner' => ['model' => 'opus'],
                 'prepare' => ['model' => 'haiku', 'effort' => 'low'],
                 // escalate_model: the model a role moves up to after a red gate or a repeated finding (null: never).
-                'implementer' => ['model' => 'opus', 'effort' => 'high', 'max_turns' => 40],
+                'implementer' => ['model' => 'opus', 'effort' => 'high', 'max_turns' => 80],
                 'integrator' => ['model' => 'opus', 'effort' => 'high'],  // merges parallel group branches into the job branch
-                'reworker' => ['model' => 'opus', 'effort' => 'high', 'max_turns' => 40, 'escalate_model' => 'opus'],
+                'reworker' => ['model' => 'opus', 'effort' => 'high', 'max_turns' => 80, 'escalate_model' => 'opus'],
                 'gate' => ['model' => 'sonnet', 'effort' => 'low', 'escalate_model' => 'opus'],
                 'reviewer' => ['model' => 'sonnet', 'effort' => 'medium'],
                 'triage' => ['model' => 'haiku', 'effort' => 'low', 'enabled' => true],

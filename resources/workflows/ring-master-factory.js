@@ -65,7 +65,19 @@ const ASK = {
     evidence: { type: 'string' },
   },
 }
-const PREPARED = { type: 'object', required: ['ready'], properties: { ready: { type: 'boolean' }, worktree: { type: 'string' }, detail: { type: 'string' } } }
+// dirty, remote and check_applies are the Prepare preflight's report; only Prepare on a non-replay run asks for them.
+const PREPARED = {
+  type: 'object',
+  required: ['ready'],
+  properties: {
+    ready: { type: 'boolean' },
+    worktree: { type: 'string' },
+    detail: { type: 'string' },
+    dirty: { type: 'array', items: { type: 'string' } },
+    remote: { type: 'boolean' },
+    check_applies: { type: 'boolean' },
+  },
+}
 const BUILT = {
   type: 'object',
   required: ['done', 'decisions'],
@@ -173,6 +185,32 @@ const notRun = gate => {
 }
 const couldNotRun = (n, prefix = '') => `gate could not run: ${prefix}${n.command}: ${n.reason}`
 
+// Every ringside call outside the gate and impact check runs from the main checkout through composer, so it works whatever the session's cwd is.
+const ringside = command => `composer --working-dir=${job.root} exec ringside -- ${command}`
+const noCd = 'Run each ringside command exactly as written, from whatever folder you are in: never `cd` into the worktree first.'
+
+// The dirty lines that matter: a path a task group lists, exactly or as a directory holding it. Spec folders are not: sessions write every job's reports into the main checkout, so another job's folder never blocks a build.
+// Lines are raw `git status --porcelain` output; in a workspace each is prefixed with its package folder and a colon.
+const within = (path, dir) => path === dir || path.startsWith(`${dir}/`)
+const porcelainPaths = line => {
+  const m = line.match(/^\s*[MADRCUT?!]{1,2}\s+(.+)$/)
+  return (m ? m[1] : line.trim()).split(' -> ').map(p => p.trim().replace(/^"(.*)"$/, '$1')).filter(Boolean)
+}
+function dirtyOverlap(lines) {
+  const hits = []
+  for (const line of lines.map(String)) {
+    const prefixed = workspace && line.match(/^([^:]+):(.*)$/)
+    const pkg = prefixed && workspace.packages[prefixed[1].trim()] ? prefixed[1].trim() : null
+    const listed = waves.flat().filter(g => !workspace || g.package === pkg).flatMap(g => g.files || [])
+    for (const raw of porcelainPaths(pkg ? prefixed[2] : line)) {
+      const path = raw.replace(/\/+$/, '')
+      if (within(path, spec.dir)) continue
+      if (listed.some(f => within(f, path))) hits.push(pkg ? `${pkg}/${raw}` : raw)
+    }
+  }
+  return [...new Set(hits)]
+}
+
 const majorKeys = list => list.filter(f => atLeast(f.severity, 'major')).map(findingKey).sort().join('\n')
 
 // The same major+ findings as the round before: one round short of noProgress.
@@ -194,23 +232,133 @@ Shell: one command per Bash call, with no \`&&\`, \`;\` or pipes. A session star
 // Every gate prompt (AC3): a command goes in not_run only when it did not start, never when it ran and failed.
 const notRunRule = `Run each gate command exactly as written: it names its checkout itself, so it works from any folder. Never run a project binary by its path. Report a command in not_run only when it did not start (the runner refused it, or it ran in the wrong checkout): command is the command as written here, reason is the exact refusal text. A command that started and then failed is never not_run: it is a blocker finding.`
 
+// --- Recovery ----------------------------------------------------------------
+// A build agent that ends without its result (out of turns, an API error, a timeout, a killed process) gets one salvage
+// of its uncommitted work and one retry of what is left. A group result that leaves tasks undone gets the retry alone (D-003).
+
+const TICKED = { type: 'object', required: ['done'], properties: { done: { type: 'array', items: { type: 'string' } } } }
+const openAsks = r => ((r && r.decisions) || []).filter(a => !decidedQuestions.has(a.question.trim().toLowerCase()))
+// The test command run in <dir> through composer, so it never depends on the cwd.
+const testIn = (cmd, dir) => {
+  const c = String(cmd || '').trim()
+  const run = /^composer\s/.test(c) ? c.replace(/^composer\s+/, `composer --working-dir=${dir} `)
+    : c.startsWith('vendor/bin/') ? `composer --working-dir=${dir} exec ${c.slice('vendor/bin/'.length)}` : null
+  return run ? `Run the test command with \`${run}\`` : `Run the test command (\`cd ${dir}\` as its own call, then \`${c}\`)`
+}
+// A path single-quoted for a shell command line.
+const quoted = p => `'${String(p).replace(/'/g, `'\\''`)}'`
+const lockCheck = where => `Before touching anything, check for \`.git/index.lock\` (in a worktree \`git -C ${where} rev-parse --git-path index.lock\` gives its path) and for a merge or rebase in progress (\`git -C ${where} status\`). If you find one, stop and return blocked saying what you found: never force, never delete the lock, never abort the merge or rebase.`
+
+// The tasks still to do: the ids minus the validated done ids. Where tasks.md is ticked, a read-only agent reads it too (D-008),
+// and the larger unfinished set wins, so a bogus or empty list retries every task not provably done.
+async function remaining(label, done, ids, ticked, stage) {
+  const claimed = new Set((done || []).filter(id => ids.includes(id)))
+  let left = ids.filter(id => !claimed.has(id))
+  if (ticked && ids.length) {
+    const read = await agent(`${common}
+Read ${specDir}/tasks.md and return in done the ids among ${ids.join(', ')} whose task is ticked (\`- [x]\`). Change nothing.`, opts('prepare', { phase: stage, label: `tasks ${label}`, schema: TICKED }))
+    const ticks = new Set(((read && read.done) || []).filter(id => ids.includes(id)))
+    const unticked = ids.filter(id => !ticks.has(id))
+    if (unticked.length > left.length) left = unticked
+  }
+  return left
+}
+
+// Returns the final result, or null when the salvage or the retry returned none. retryUndone opts a caller whose agent
+// reports its finished task ids in done (a Build-loop group) into retrying a non-null result that leaves tasks undone;
+// without it only a null result is recovered.
+async function recover(label, result, salvagePrompt, retry, { ids = [], ticked = false, stage = 'Build', retryUndone = false } = {}) {
+  let base = result
+  if (result) {
+    if (!retryUndone || result.blocked || openAsks(result).length) return result
+    if (ids.every(id => (result.done || []).includes(id))) return result
+  } else {
+    log(`${label}: the build agent returned no result; salvaging its work.`)
+    base = await agent(salvagePrompt, opts('reworker', { agentType: 'ring-master-implementer', phase: stage, label: `salvage ${label}`, schema: BUILT }))
+    if (!base || base.blocked || openAsks(base).length) return base
+  }
+  const left = await remaining(label, base.done, ids, ticked, stage)
+  if (!left.length) return base
+  log(`${label}: retrying ${left.join(', ')}.`)
+  const again = await retry(left)
+  if (!again) return null
+  const finished = (base.done || []).filter(id => ids.includes(id) && !left.includes(id))
+  return { ...again, done: [...new Set([...finished, ...(again.done || [])])] }
+}
+
 // --- Prepare ---------------------------------------------------------------
 
 phase('Prepare')
 const worktreeMode = config.build.worktree.mode
 const packages = workspace ? Object.keys(workspace.packages) : []
+// The job opens a PR under the same condition it pushes one: not a replay, and the config names a host.
+const opensPr = !replay && Boolean(config.host && config.host.provider)
+const setupStep = workspace
+  ? `This is a workspace job across ${packages.join(', ')}. Run \`${ringside(`worktrees ${spec.id} --setup`)}\` and return ready=true only if it exits 0 (put its output in detail otherwise).`
+  : worktreeMode === 'per-job'
+  ? `Run \`${ringside(`worktrees ${spec.id} --setup${replay ? ` --replay${replay_from ? ` --from=${replay_from}` : ''}` : ''}`)}\`: it creates or reuses the job worktree at ${job.worktree} on branch ${job.branch} and installs its dependencies. Return ready=true only if it exits 0, with worktree set to the path it prints. On a non-zero exit, return ready=false with the command output in detail: do not repair anything manually, and never create the worktree with git yourself or fall back to any other command.`
+  : `Work in ${job.root} itself: create or check out branch ${job.branch} (based on ${config.host.base}).`
+// The preflight (non-replay only): main's uncommitted changes, the origin remote, and whether ringside check applies. Workspace jobs check each package folder.
+const preflightDirs = workspace ? packages.map(p => [p, `${job.root}/${p}`]) : [[null, job.root]]
+const every = workspace ? ' in every package folder' : ''
+const preflight = `Preflight first, before anything else, each command as its own Bash call (never a compound command)${workspace ? ', for each package folder in turn' : ''}: ${preflightDirs.map(([p, dir]) => `${p ? `${p}: ` : ''}\`git -C ${dir} status --porcelain\`, then \`git -C ${dir} remote get-url origin\`, then check with the Read or Glob tool that ${dir}/docs/agent/standards.index.yml and ${dir}/ring-master.yml exist`).join('; ')}.
+Return dirty as every line \`git status --porcelain\` printed, exactly as printed (tracked-modified and untracked lines both count; [] when it printed nothing)${workspace ? `, each prefixed with its package folder and a colon, as in \`${packages[0]}: M src/Example.php\`` : ''}; the script decides which lines matter. Return remote=true only if \`remote get-url origin\` exited 0${every}, and check_applies=true only if both files exist${every}. Name a missing remote or file in detail.
+If dirty is non-empty or remote is false, return ready=false with dirty, remote and check_applies, and do not run \`worktrees --setup\` or any other setup step below, so no worktree or branch is left behind. Otherwise go on.`
 const ws = await agent(`${common}
-Prepare the job workspace. ${workspace
-    ? `This is a workspace job across ${packages.join(', ')}. From ${job.root}, run \`vendor/bin/ringside worktrees ${spec.id} --setup\` and return ready=true only if it exits 0 (put its output in detail otherwise).`
-    : worktreeMode === 'per-job'
-    ? `From ${job.root}, run \`vendor/bin/ringside worktrees ${spec.id} --setup${replay ? ` --replay${replay_from ? ` --from=${replay_from}` : ''}` : ''}\`: it creates or reuses the job worktree at ${job.worktree} on branch ${job.branch} and installs its dependencies. Return ready=true only if it exits 0, with worktree set to the path it prints. On a non-zero exit, return ready=false with the command output in detail: do not repair anything manually, and never create the worktree with git yourself or fall back to any other command.`
-    : `Work in ${job.root} itself: create or check out branch ${job.branch} (based on ${config.host.base}).`}
-Return ready=false with the error output in detail if anything fails.`, opts('prepare', { label: 'prepare', schema: PREPARED }))
-if (!ws || !ws.ready) return finish({ status: 'escalated', stage: 'prepare', reasons: ['workspace setup failed'], detail: ws && ws.detail })
-const tree = workspace ? `${job.root}/${workspace.dir}` : ws.worktree || (worktreeMode === 'per-job' ? job.worktree : job.root)
+Prepare the job workspace. ${noCd}
+${replay ? '' : `${preflight}\n`}${setupStep}
+Return ready=false with the error output in detail if anything fails.${replay ? '' : ' Always return dirty, remote and check_applies.'}`, opts('prepare', { label: 'prepare', schema: PREPARED }))
+if (!ws) return finish({ status: 'escalated', stage: 'prepare', reasons: ['workspace setup failed'], detail: null })
+
+// The script judges the preflight, not the agent. A replay has none: missing fields read as the safe values, and nothing stops it.
+let prepared = ws
+let gateCheck = ws.check_applies !== false
+if (!replay) {
+  const missing = [['dirty', Array.isArray(ws.dirty)], ['remote', typeof ws.remote === 'boolean'], ['check_applies', typeof ws.check_applies === 'boolean']].filter(([, ok]) => !ok).map(([k]) => k)
+  if (missing.length) {
+    return finish({ status: 'needs-decision', stage: 'prepare', decisions: [{
+      question: 'Prepare did not report its preflight. Re-run Prepare and its preflight?',
+      options: ['Re-run Prepare and its preflight', 'Stop the job'],
+      recommendation: 'Re-run Prepare and its preflight',
+      evidence: `The Prepare result has no ${missing.join(', ')}.`,
+    }], missing })
+  }
+  // Checked again on every resume: an answer is never taken as proof that main is clean or the remote exists.
+  const dirty = dirtyOverlap(ws.dirty)
+  if (dirty.length) {
+    return finish({ status: 'needs-decision', stage: 'prepare', decisions: [{
+      question: 'Commit or stash these main changes before the build?',
+      options: ['Commit them on main first, then build', 'Stash them, then build'],
+      recommendation: 'Commit them on main first, then build',
+      evidence: `Uncommitted changes on main that the build touches: ${dirty.join(', ')}`,
+    }], dirty })
+  }
+  if (!ws.remote && opensPr) {
+    return finish({ status: 'needs-decision', stage: 'prepare', decisions: [{
+      question: 'No origin remote found. What is the remote URL for the PR?',
+      options: ['Add the origin remote, then build'],
+      recommendation: 'Add the origin remote, then build',
+      evidence: ws.detail || `\`git -C ${job.root} remote get-url origin\` failed`,
+    }] })
+  }
+  gateCheck = ws.check_applies
+  // The agent held back the setup for the script to judge the preflight, and nothing it found stops the build.
+  if (!ws.ready && (ws.dirty.length || !ws.remote)) {
+    prepared = await agent(`${common}
+Prepare the job workspace. The preflight is done and the build may go ahead: do not repeat it. ${noCd}
+${setupStep}
+Return ready=false with the error output in detail if anything fails.`, opts('prepare', { label: 'prepare setup', schema: PREPARED }))
+  }
+}
+if (!prepared || !prepared.ready) return finish({ status: 'escalated', stage: 'prepare', reasons: ['workspace setup failed'], detail: prepared && prepared.detail })
+if (!gateCheck && !workspace) log(`Gate: ringside check dropped for this run, because it does not apply to this package (${ws.detail || 'no docs/agent/standards.index.yml or ring-master.yml'}).`)
+const tree = workspace ? `${job.root}/${workspace.dir}` : prepared.worktree || (worktreeMode === 'per-job' ? job.worktree : job.root)
 const treeFor = pkg => (workspace && pkg ? `${tree}/${pkg}` : tree)
 const command = (pkg, name) => (workspace && pkg ? workspace.packages[pkg].commands[name] : config.commands[name])
 const trees = workspace ? packages.map(p => `${p}: ${treeFor(p)}`).join('; ') : tree
+// ringside check does not apply to Ringside itself (D-009, tooling/verification-gate), so its gates leave it out.
+// The package is named after the job root's folder, as Job.php names it.
+const ringsideCheck = !/^ringside$/i.test(String(job.root).replace(/[\\/]+$/, '').split(/[\\/]/).pop())
 
 // --- Build -----------------------------------------------------------------
 
@@ -232,28 +380,39 @@ if (variants > 1) {
   const vBranch = n => `${job.branch}--v${n}`
   const ns = Array.from({ length: variants }, (_, i) => i + 1)
   const made = await agent(`${common}
-From ${job.root}, run \`vendor/bin/ringside worktrees ${spec.id} --variants=${variants} --setup${replay ? ' --replay' : ''}\`: it creates ${variants} worktrees beside ${tree}, each on its own branch from ${job.branch}, and installs them. Return ready=true only if it exits 0; otherwise ready=false with the output in detail. Never create the worktrees with git yourself.`,
+Run \`${ringside(`worktrees ${spec.id} --variants=${variants} --setup${replay ? ' --replay' : ''}`)}\`: it creates ${variants} worktrees beside ${tree}, each on its own branch from ${job.branch}, and installs them. ${noCd} Return ready=true only if it exits 0; otherwise ready=false with the output in detail. Never create the worktrees with git yourself.`,
     opts('prepare', { phase: 'Variants', label: `variant worktrees ${variants}`, schema: PREPARED }))
   if (!made || !made.ready) return finish({ status: 'escalated', stage: 'variants', reasons: ['variant worktree setup failed'], detail: made && made.detail })
 
-  const tasks = waves.flat().flatMap(g => g.tasks.filter(todo).map(t => `${t.id} ${t.text} (group ${g.n}: ${g.name})`))
+  const pending = waves.flat().flatMap(g => g.tasks.filter(todo).map(t => ({ id: t.id, line: `${t.id} ${t.text} (group ${g.n}: ${g.name})` })))
+  const tasks = pending.map(t => t.line)
   const criteria = [...new Set(waves.flat().flatMap(g => g.criteria))]
-  const buildVariant = n => {
-    const o = opts('implementer', { agentType: 'ring-master-implementer', phase: 'Variants', label: `variant ${n}`, schema: BUILT })
+  // ids, when given (a retry), replace the todo filter: only those tasks are listed.
+  const buildVariant = (n, ids) => {
+    const o = opts('implementer', { agentType: 'ring-master-implementer', phase: 'Variants', label: ids ? `variant ${n} retry` : `variant ${n}`, schema: BUILT })
     if (models[n - 1]) o.model = models[n - 1]
     return agent(`${common}
-Build variant ${n} of ${variants} of this job, on your own, in its worktree ${vTree(n)} (branch ${vBranch(n)}, made from ${job.branch}, which may already hold an earlier attempt you are free to rewrite). The other variants are built at the same time by other agents; a judge keeps one.
+Build variant ${n} of ${variants} of this job, on your own, in its worktree ${vTree(n)} (branch ${vBranch(n)}, made from ${job.branch}, which may already hold an earlier attempt you are free to rewrite). The other variants are built at the same time by other agents; a judge keeps one.${ids ? ` This is a retry: earlier work on this variant is already committed on ${vBranch(n)}; keep it and finish only the tasks below.` : ''}
 Approach for this variant: ${HINTS[n - 1]}
-Tasks, in this order: ${tasks.join('; ')}.
+Tasks, in this order: ${(ids ? pending.filter(t => ids.includes(t.id)) : pending).map(t => t.line).join('; ')}.
 Acceptance criteria: ${criteria.join(', ') || 'see spec.md'}.
 Write the tests first, then the code, and run \`${config.commands.test}\` in ${vTree(n)} until it passes. Commit on ${vBranch(n)} with the message "${spec.id}: variant ${n}". Do not tick tasks.md; write ${outDir}/variants/v${n}.md (approach, files, tests, deviations) instead.
 If a task needs a choice the spec and decisions don't settle, stop at a safe point and return it in decisions with options and your recommendation instead of choosing.`, o)
   }
   const gateVariant = n => agent(`${common}
-Gate variant ${n} in ${vTree(n)}: run \`${cwdProof(vTree(n), config.commands.verify)}\`${config.commands.format_check ? ` and \`${cwdProof(vTree(n), config.commands.format_check)}\`` : ''}, then \`${cwdProof(vTree(n), 'composer exec ringside check')}\`. ${notRunRule} Map every numbered acceptance criterion in spec.md to the test that proves it. Every failure is a blocker finding. List changed_files (git -C ${vTree(n)} diff --name-only ${config.host.base}...${vBranch(n)}).
+Gate variant ${n} in ${vTree(n)}: run \`${cwdProof(vTree(n), config.commands.verify)}\`${config.commands.format_check ? ` and \`${cwdProof(vTree(n), config.commands.format_check)}\`` : ''}${gateCheck && ringsideCheck ? `, then \`${cwdProof(vTree(n), 'composer exec ringside check')}\`` : ''}. ${notRunRule} Map every numbered acceptance criterion in spec.md to the test that proves it. Every failure is a blocker finding. List changed_files (git -C ${vTree(n)} diff --name-only ${config.host.base}...${vBranch(n)}).
 Write ${outDir}/variants/v${n}-gate.md starting with "VERDICT: PASS" or "VERDICT: CHANGES".`, opts('gate', { phase: 'Variants', label: `gate v${n}`, schema: GATE }))
+  const salvageVariant = n => `${common}
+Salvage variant ${n} of this job in its worktree ${vTree(n)}. Its build agent ended without returning a result (out of turns, an API error, a timeout or a killed process), so its work may be half done and uncommitted.
+${lockCheck(vTree(n))}
+Then run \`git -C ${vTree(n)} status --porcelain\` and \`git -C ${vTree(n)} diff\` and compare them with the variant's tasks: ${tasks.join('; ')}.
+${testIn(config.commands.test, vTree(n))} and keep only the work that passes.
+Commit what passes on ${vBranch(n)} with the message "${spec.id}: variant ${n} (salvaged)". Do not tick tasks.md; add a "## Variant ${n} (salvaged)" note to ${outDir}/variants/v${n}.md (what you found, what you committed, what is left).
+Return done with the ids of the finished tasks only. Do not use blocked for unfinished tasks: the workflow retries them.`
   const results = await pipeline(ns, async n => {
-    const b = await buildVariant(n)
+    // Variants never tick tasks.md, so the salvage's own done ids are the only source. A variant's own result does not
+    // list its finished ids, so only a null one is recovered (no retryUndone).
+    const b = await recover(`v${n}`, await buildVariant(n), salvageVariant(n), ids => buildVariant(n, ids), { ids: pending.map(t => t.id), stage: 'Variants' })
     if (!b || b.blocked) return { n, built: b, gate: null }
     if (b.decisions && b.decisions.length) return { n, built: b, gate: null }
     return { n, built: b, gate: await gateVariant(n) }
@@ -283,7 +442,7 @@ Judge the ${gated.length} variants of this job and pick the one to keep. Their g
   log(`Variants: ${winner} of ${variants} kept${judged ? ` (${judged.reasons.join('; ')})` : ''}.`)
   variantsWinner = winner
   const adopted = await agent(`${common}
-Variant ${winner} won. In ${tree}, fast-forward ${job.branch} to it: \`git -C ${tree} merge --ff-only ${vBranch(winner)}\`. ${replay ? '' : `Tick the tasks it finished in ${specDir}/tasks.md (${tasks.length} in all) and append a "## Variant ${winner}" section to ${specDir}/build.md from ${outDir}/variants/v${winner}.md. `}Then from ${job.root} run \`vendor/bin/ringside worktrees ${spec.id} --remove-variants${replay ? ' --replay' : ''}\`. Return merged=false with the details if the fast-forward fails.`,
+Variant ${winner} won. In ${tree}, fast-forward ${job.branch} to it: \`git -C ${tree} merge --ff-only ${vBranch(winner)}\`. ${replay ? '' : `Tick the tasks it finished in ${specDir}/tasks.md (${tasks.length} in all) and append a "## Variant ${winner}" section to ${specDir}/build.md from ${outDir}/variants/v${winner}.md. `}Then run \`${ringside(`worktrees ${spec.id} --remove-variants${replay ? ' --replay' : ''}`)}\`. ${noCd} Return merged=false with the details if the fast-forward fails.`,
     opts('integrator', { phase: 'Variants', label: `adopt v${winner}`, schema: INTEGRATED }))
   if (!adopted || !adopted.merged) return finish({ status: 'escalated', stage: 'variants', reasons: [adopted ? adopted.detail || 'the winning variant did not merge' : 'adopting the winning variant failed'], variants_winner: winner })
   const won = results.find(r => r && r.n === winner)
@@ -299,18 +458,36 @@ const groupTree = n => `${tree}--g${n}`
 const groupBranch = n => `${job.branch}--g${n}`
 for (const wave of variants > 1 ? [] : waves) {
   const own = groupTrees && wave.length > 1
-  const build = group => agent(`${common}
-Implement task group ${group.n}: "${group.name}" in ${own ? `its own worktree ${groupTree(group.n)} (branch ${groupBranch(group.n)}, made from ${job.branch}); other groups of this wave build beside it at the same time` : treeFor(group.package)}${workspace ? ` (package ${group.package}; the other packages of this job are beside it in ${tree})` : ''}.
-Tasks: ${group.tasks.filter(todo).map(t => `${t.id} ${t.text}`).join('; ')}.
+  const whereOf = group => (own ? groupTree(group.n) : treeFor(group.package))
+  const branchOf = group => (own ? groupBranch(group.n) : job.branch)
+  const listed = (group, ids) => (ids ? group.tasks.filter(t => ids.includes(t.id)) : group.tasks.filter(todo)).map(t => `${t.id} ${t.text}`).join('; ')
+  // ids, when given (a retry), replace the todo filter: only those tasks are listed.
+  const build = (group, ids) => agent(`${common}
+Implement task group ${group.n}: "${group.name}" in ${own ? `its own worktree ${groupTree(group.n)} (branch ${groupBranch(group.n)}, made from ${job.branch}); other groups of this wave build beside it at the same time` : treeFor(group.package)}${workspace ? ` (package ${group.package}; the other packages of this job are beside it in ${tree})` : ''}.${ids ? ` This is a retry: earlier work on this group is already committed on ${branchOf(group)}; keep it and finish only the tasks below.` : ''}
+Tasks: ${listed(group, ids)}.
 Files it owns: ${group.files.join(', ') || 'not listed'}.${workspace && workspace.packages[group.package].standards.length ? ` ${group.package}'s own standards, which override a global one with the same key: ${workspace.packages[group.package].standards.map(p => `${job.root}/${p}`).join(', ')}.` : ''} Acceptance criteria it proves: ${group.criteria.join(', ') || 'see tasks'}.
-Write the tests first, then the code. ${testsInGroup ? `Run \`${command(group.package, 'test')}\` in ${treeFor(group.package)} until it passes.` : 'Do not run the test suite; the gate runs it after the build.'}
+Write the tests first, then the code. ${testsInGroup ? `Run \`${command(group.package, 'test')}\` in ${treeFor(group.package)} until it passes.` : 'Do not run the test suite; the gate runs it after the build. Tick the task that only runs the tests along with the others: the gate covers it.'}
 Commit your changes on ${own ? groupBranch(group.n) : job.branch} with the message "${spec.id}: group ${group.n} ${group.name}", ${replay ? 'do not tick tasks.md,' : `tick the finished tasks in ${specDir}/tasks.md,`} and append a "## Group ${group.n}" section to ${outDir}/build.md (files, tests, deviations).
 If a task needs a choice the spec and decisions don't settle (a public contract, schema, config shape, dependency, module boundary, or two viable designs), stop at a safe point and return it in decisions with options and your recommendation instead of choosing.`,
-    opts('implementer', { agentType: 'ring-master-implementer', phase: 'Build', label: `group ${group.n}`, schema: BUILT }))
+    opts('implementer', { agentType: 'ring-master-implementer', phase: 'Build', label: ids ? `group ${group.n} retry` : `group ${group.n}`, schema: BUILT }))
+
+  // Scoped to the group's files (D-004): other groups of the wave may have uncommitted work in the same tree.
+  const salvageGroup = group => {
+    const where = whereOf(group)
+    const scope = group.files.length ? ` -- ${group.files.map(quoted).join(' ')}` : ''
+    return `${common}
+Salvage task group ${group.n}: "${group.name}" in ${where}. Its build agent ended without returning a result (out of turns, an API error, a timeout or a killed process), so its work may be half done and uncommitted.
+${lockCheck(where)}
+Then run \`git -C ${where} status --porcelain${scope}\` and \`git -C ${where} diff${scope}\` and compare them with the group's tasks: ${listed(group)}.${scope ? ` Touch only these files (${group.files.join(', ')}); leave every other path alone, since other groups may have uncommitted work in the same tree.` : ''}
+${testsInGroup ? `${testIn(command(group.package, 'test'), where)} and keep only the work that passes.` : 'Do not run the test suite; the gate runs it after the build.'}
+Commit ${testsInGroup ? 'what passes' : 'the finished work'}${scope ? ', only those paths,' : ''} on ${branchOf(group)} with the message "${spec.id}: group ${group.n} ${group.name} (salvaged)", ${replay ? 'do not tick tasks.md,' : `tick only the finished tasks in ${specDir}/tasks.md,`} and add a "## Group ${group.n} (salvaged)" note to ${outDir}/build.md (what you found, what you committed, what is left).
+Return done with the ids of the finished tasks only. Do not use blocked for unfinished tasks: the workflow retries them.`
+  }
+  const recoverGroup = (group, result) => recover(`g${group.n}`, result, salvageGroup(group), ids => build(group, ids), { ids: group.tasks.filter(todo).map(t => t.id), ticked: !replay, retryUndone: true })
 
   if (own) {
     const made = await agent(`${common}
-From ${job.root}, run \`vendor/bin/ringside worktrees ${spec.id} --groups=${wave.map(g => g.n).join(',')} --setup${replay ? ' --replay' : ''}\`: it creates a worktree per task group beside ${tree}, each on its own branch from ${job.branch}, and installs it. Return ready=true only if it exits 0; otherwise ready=false with the output in detail. Never create the worktrees with git yourself.`,
+Run \`${ringside(`worktrees ${spec.id} --groups=${wave.map(g => g.n).join(',')} --setup${replay ? ' --replay' : ''}`)}\`: it creates a worktree per task group beside ${tree}, each on its own branch from ${job.branch}, and installs it. ${noCd} Return ready=true only if it exits 0; otherwise ready=false with the output in detail. Never create the worktrees with git yourself.`,
       opts('prepare', { phase: 'Build', label: `group worktrees ${wave.map(g => g.n).join(',')}`, schema: PREPARED }))
     if (!made || !made.ready) return finish({ status: 'escalated', stage: 'build', reasons: ['group worktree setup failed'], detail: made && made.detail })
   }
@@ -319,8 +496,16 @@ From ${job.root}, run \`vendor/bin/ringside worktrees ${spec.id} --groups=${wave
   const files = wave.flatMap(g => g.files)
   const parallelOk = config.build.parallel && (own || new Set(files).size === files.length)
   const size = parallelOk ? Math.max(1, config.build.max_concurrency) : 1
+  const first = []
+  // pipeline passes (value, item, index): call build with the group alone, so no index is read as task ids.
+  for (let i = 0; i < wave.length; i += size) first.push(...await pipeline(wave.slice(i, i + size), g => build(g)))
+  // Every group of a wave without a result points at an outage or a rate limit, not a group out of turns: no salvage.
+  if (wave.length > 1 && first.every(b => !b)) {
+    log(`Every group of wave ${waves.indexOf(wave) + 1} returned no result (probable outage or rate limit); escalating without a salvage.`)
+    return finish({ status: 'escalated', stage: 'build', reasons: ['a build agent failed'], built: first })
+  }
   const built = []
-  for (let i = 0; i < wave.length; i += size) built.push(...await pipeline(wave.slice(i, i + size), build))
+  for (let i = 0; i < wave.length; i += size) built.push(...await pipeline(wave.slice(i, i + size), g => recoverGroup(g, first[wave.indexOf(g)])))
 
   const asks = built.flatMap(b => (b && b.decisions) || []).filter(a => !decidedQuestions.has(a.question.trim().toLowerCase()))
   if (asks.length) return finish({ status: 'needs-decision', stage: 'build', decisions: asks, built })
@@ -331,7 +516,7 @@ From ${job.root}, run \`vendor/bin/ringside worktrees ${spec.id} --groups=${wave
     phase('Integrate')
     const merged = await agent(`${common}
 Integrate wave ${waves.indexOf(wave) + 1} into ${job.branch} in ${tree}: merge ${wave.map(g => groupBranch(g.n)).join(', ')} one at a time (\`git -C ${tree} merge --no-ff <branch>\`). Resolve every conflict so each group's tests and intent survive, and commit the merge. Then run \`${config.commands.test}\` in ${tree} until it passes, committing any fix on ${job.branch} with "${spec.id}: integrate wave ${waves.indexOf(wave) + 1}".
-When it is green, from ${job.root} run \`vendor/bin/ringside worktrees ${spec.id} --remove-groups${replay ? ' --replay' : ''}\`. Return merged=false with the details if a conflict needs a choice the spec and decisions don't settle, or the tests stay red.`,
+When it is green, run \`${ringside(`worktrees ${spec.id} --remove-groups${replay ? ' --replay' : ''}`)}\`. ${noCd} Return merged=false with the details if a conflict needs a choice the spec and decisions don't settle, or the tests stay red.`,
       opts('integrator', { agentType: 'ring-master-implementer', phase: 'Integrate', label: `integrate w${waves.indexOf(wave) + 1}`, schema: INTEGRATED }))
     if (!merged || !merged.merged) return finish({ status: 'escalated', stage: 'integrate', reasons: [merged ? merged.detail || 'the group branches did not integrate' : 'the integrator failed'], conflicts: merged && merged.conflicts })
   }
@@ -350,7 +535,7 @@ for (let round = 1; round <= review.rounds.max; round++) {
 
   phase('Gate')
   const runGate = (pkg, file) => agent(`${common}
-Run the gate in ${treeFor(pkg)}: \`${cwdProof(treeFor(pkg), command(pkg, 'verify'))}\`${command(pkg, 'format_check') ? ` and \`${cwdProof(treeFor(pkg), command(pkg, 'format_check'))}\`` : ''}${workspace ? '' : `, then \`${cwdProof(treeFor(pkg), 'composer exec ringside check')}\` (through composer, never by path)`}.
+Run the gate in ${treeFor(pkg)}: \`${cwdProof(treeFor(pkg), command(pkg, 'verify'))}\`${command(pkg, 'format_check') ? ` and \`${cwdProof(treeFor(pkg), command(pkg, 'format_check'))}\`` : ''}${workspace || !(gateCheck && ringsideCheck) ? '' : `, then \`${cwdProof(treeFor(pkg), 'composer exec ringside check')}\` (through composer, never by path)`}.
 ${notRunRule}
 ${review.gate.criteria_mapping ? `Map every numbered acceptance criterion in spec.md${workspace ? ` that ${pkg} proves` : ''} to the test (file and name) or code that proves it.` : ''}
 Every failure is a blocker finding with the failing output summarised${workspace ? `; report files as ${pkg}/<path>` : ''}. List changed_files (git diff --name-only ${config.host.base}...${job.branch}${workspace ? `, prefixed with ${pkg}/` : ''}).

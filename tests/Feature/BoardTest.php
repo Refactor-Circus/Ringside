@@ -93,3 +93,13 @@ it('reads a pr written as a bare url', function () {
 
     expect((new Board([$project]))->data()['projects'][0]['specs'][0]['pr'])->toBe(['url' => 'https://github.com/acme/pkg/pull/1']);
 });
+
+it('reads a spec whose meta.yml is not valid YAML as unreadable, with the error, instead of failing the board', function () {
+    $project = boardProject();
+    writeFixture($project->root, 'docs/agent/specs/2026-10-23-1430-import/meta.yml', "id: x\nreview_passes: 2created: 2026-10-27\n");
+
+    $import = (new Board([$project]))->data()['projects'][0]['specs'][0];
+
+    expect($import['status'])->toBe(Board::UNREADABLE)
+        ->and($import['meta_error'])->toContain('colon cannot be used');
+});

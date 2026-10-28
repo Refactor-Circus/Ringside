@@ -1,7 +1,43 @@
 id: 2026-10-27-1115-gate-not-run-escalation
 title: Gate reports commands it could not run and escalates once
-status: written
+status: needs-decision
 created: 2026-10-27
 ticket: { provider: file, key: T-004, url: docs/agent/tickets/T-004.md }
 review_passes: 2
 standards: {}
+runs:
+  - workflow: ring-master-factory
+    run_id: wf_064443d8-bcd
+    result: needs-decision
+    round: 0
+    date: 2026-10-27
+  - workflow: ring-master-factory
+    run_id: wf_4b47f5fe-dc9
+    result: needs-decision
+    round: 1
+    date: 2026-10-27
+  - workflow: ring-master-factory
+    run_id: wf_95a293f3-c55
+    result: needs-decision
+    round: 0
+    date: 2026-10-28
+  - workflow: ring-master-factory
+    run_id: wf_c85c4480-f5e
+    result: needs-decision
+    round: 1
+    date: 2026-10-28
+  - workflow: ring-master-factory
+    run_id: wf_ce464774-e6a
+    result: escalated
+    round: 0
+    date: 2026-10-28
+  - workflow: ring-master-factory
+    run_id: wf_3ad6c8ee-abf
+    result: needs-decision
+    round: 1
+    date: 2026-10-28
+  - workflow: ring-master-factory
+    run_id: wf_01b24242-e2e
+    result: needs-decision
+    round: 0
+    date: 2026-10-28

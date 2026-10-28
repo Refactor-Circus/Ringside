@@ -8,12 +8,11 @@ In scope:
 
 - The `GATE` schema (`resources/workflows/ring-master-factory.js:73`) gets a `not_run` channel for commands the gate could not run.
 - A helper rewrites gate commands cwd-proof (`composer --working-dir=<tree> [exec] ...`), used by `gateVariant` (line 233) and `runGate` (line 327).
-- The spec's done-definition commands run every round.
 - A non-empty `not_run` escalates at once: stage `gate`, no red round counted, no rework, no commit.
 - `resources/skills/workflow/factory.md` documents the fix.
 - Workflow simulations in `tests/workflows/factory.test.mjs` cover it.
 
-Out of scope: the `Config` verify default, runner allowlist changes, merging.
+Out of scope: the `Config` verify default, runner allowlist changes, merging, and running the done-definition commands every round (moved to T-005, D-005).
 
 ## Decisions
 

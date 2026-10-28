@@ -64,3 +64,11 @@
 - Rationale: none given
 - Raised by: build (answered in RingMaster)
 - Date: 2026-10-27
+
+## D-009
+
+- Question: The round-2 gate flags `ringside check` ('Generated files are stale or missing') as a blocker and asks for `ringside sync` output to be committed on the job branch. Ringside has never tracked these 32 generated files, and tooling/verification-gate keeps `ringside check` out of Ringside's gate. Which should apply?
+- Choice: Follow tooling/verification-gate: keep ringside check out of Ringside's gate, drop the finding, and fix the gate step so it stops running ringside check for Ringside
+- Rationale: none given
+- Raised by: build (answered in RingMaster)
+- Date: 2026-10-28
