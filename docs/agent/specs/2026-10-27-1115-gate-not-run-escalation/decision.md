@@ -1,11 +1,15 @@
-# Factory decision: needs-decision
+# Factory decision: approved
 
-Run `wf_01b24242-e2e` (2026-10-28), stage `prepare`, round 0, gate red rounds 0.
+Run `wf_19f283c5-d5e` (2026-10-28), stage `decide`, 1 review round, gate red rounds 0.
 
 ## Reasons
 
-- The main checkout has an uncommitted change the build would touch: `docs/agent/specs/2026-10-27-1101-recover-build-group-no-result/meta.yml` (status `in-review` → `merged`; PR #4 is merged).
+- gate green; only nits left
 
-## Questions
+## Nits
 
-- Q-018 (build): Commit or stash these main changes before the build? Recommended: commit them on main first, then build (precedent: Atrium, 2026-10-28).
+- None.
+
+## Breaks
+
+- Cortex: `composer test:unit` fails against the job (exit 2). 655 of 656 tests pass. The one error is `KeenInCiTest::it_keeps_refactor_circus_keen_in_require_dev_with_a_lock_entry`: `file_get_contents(.../Cortex--impact-2026-10-27-1115-gate-not-run-escalation/composer.lock): Failed to open stream: No such file or directory`. The impact worktree has no `composer.lock`, and this job changes no PHP API that Cortex uses, so this looks like a problem with the impact check's environment rather than a real break.
