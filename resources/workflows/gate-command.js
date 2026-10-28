@@ -57,9 +57,19 @@ function rewrite(segment, quoted) {
   return segment
 }
 
-// `-d <dir>`, `-d<dir>`, `--working-dir <dir>` or `--working-dir=<dir>`.
+// `-d <dir>`, `-d<path>`, `--working-dir <dir>` or `--working-dir=<dir>`,
+// among Composer's own arguments (everything after a bare `--` belongs to the
+// script). `-d<path>` needs something path-like after the `-d` (`/`, `.`, `~`,
+// a quote, `$`, or a `/` further on), so an option such as `-dev` that only
+// starts with `-d` is not taken for a working dir.
+const SHORT_WORKING_DIR = /^-d(?:$|[/.~'"$]|\S*\/)/
+
 function namesWorkingDir(args) {
-  return args.split(/\s+/).some(t => t === '--working-dir' || t.startsWith(WORKING_DIR) || /^-d/.test(t))
+  const tokens = args.split(/\s+/)
+  const end = tokens.indexOf('--')
+
+  return (end === -1 ? tokens : tokens.slice(0, end))
+    .some(t => t === '--working-dir' || t.startsWith(WORKING_DIR) || SHORT_WORKING_DIR.test(t))
 }
 
 // Splits a command at top-level `&&`, `||`, `;` and `|`, ignoring separators

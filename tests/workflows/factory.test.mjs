@@ -480,6 +480,19 @@ test('cwdProof leaves a composer command that already names a working dir unchan
   for (const cmd of ['composer -d /other test', 'composer -d/other test', 'composer --working-dir /other test', 'composer --working-dir=/other test']) {
     assert.equal(cwdProof(tree, cmd), cmd)
   }
+  for (const cmd of ['composer -d./rel test', 'composer -d../rel test', 'composer -d~/pkg test', "composer -d'/my pkg' test", 'composer -d"/my pkg" test', 'composer -dsub/pkg test', 'composer test -d /other']) {
+    assert.equal(cwdProof(tree, cmd), cmd)
+  }
+})
+
+test('cwdProof counts only -d or -d followed by a path as a working dir, and nothing after --', () => {
+  // An option that merely starts with -d is not a working dir.
+  assert.equal(cwdProof(tree, 'composer test -dev'), `composer ${wd} test -dev`)
+  assert.equal(cwdProof(tree, 'composer show -direct'), `composer ${wd} show -direct`)
+  // After a bare --, arguments belong to the script, not to Composer.
+  assert.equal(cwdProof(tree, 'composer test -- -d memory_limit=1G'), `composer ${wd} test -- -d memory_limit=1G`)
+  assert.equal(cwdProof(tree, 'composer test -- -d/tmp'), `composer ${wd} test -- -d/tmp`)
+  assert.equal(cwdProof(tree, 'composer test -- --working-dir /tmp'), `composer ${wd} test -- --working-dir /tmp`)
 })
 
 // --- not_run: commands the gate could not run (AC1, AC3, AC5, AC6, AC7, AC9, AC10) ---
