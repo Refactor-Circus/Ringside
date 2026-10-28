@@ -88,11 +88,11 @@ it('finds the sibling packages that require this one, never job worktrees or its
         'Other' => ['require' => ['acme/else' => '^1.0']],
     ]);
     Worktree::prepare($project, '../Lib--'.IMPACT_SPEC, 'ring-master/'.IMPACT_SPEC, 'main');
-    $real = (string) realpath($parent);
 
+    // realpath() spells the path the platform's way (backslashes on Windows).
     expect(Impact::consumers($project, ['refactor-circus/fixture']))->toBe([
-        ['folder' => 'App', 'path' => $real.'/App', 'test' => 'composer test:unit'],
-        ['folder' => 'Shop', 'path' => $real.'/Shop', 'test' => 'vendor/bin/pest'],
+        ['folder' => 'App', 'path' => (string) realpath($parent.'/App'), 'test' => 'composer test:unit'],
+        ['folder' => 'Shop', 'path' => (string) realpath($parent.'/Shop'), 'test' => 'vendor/bin/pest'],
     ]);
 });
 
@@ -139,7 +139,7 @@ it('tests a consumer in a throwaway worktree resolved to the job worktree, and r
         ->and((string) file_get_contents($bin.'/composer.log'))->toContain('install --no-interaction|composer.local.json')
         ->and(file_exists($parent.'/App--impact-'.IMPACT_SPEC))->toBeFalse()
         ->and(file_exists($parent.'/App/composer.local.json'))->toBeFalse();
-});
+})->skipOnWindows(); // the fake `composer` is a #!/bin/sh script, and the consumer's test is `cat`
 
 it('relaxes a released constraint so the job branch satisfies it, and updates only the job packages from the lock', function () {
     [$parent, $project] = impactWorkspace(['App' => ['require' => ['refactor-circus/fixture' => '^1.0'], 'test' => 'cat composer.local.json']]);
@@ -153,7 +153,7 @@ it('relaxes a released constraint so the job branch satisfies it, and updates on
     expect($manifest['require-dev']['refactor-circus/fixture'])->toBe('*@dev')
         ->and($manifest['repositories'][0])->not->toHaveKey('options.versions')
         ->and((string) file_get_contents($bin.'/composer.log'))->toContain('update refactor-circus/fixture --with-dependencies --no-interaction|composer.local.json');
-});
+})->skipOnWindows(); // the fake `composer` is a #!/bin/sh script, and the consumer's test is `cat`
 
 it('reports a failing consumer, or one that will not install, without failing itself', function () {
     [$parent, $project] = impactWorkspace(['App' => ['require' => ['refactor-circus/fixture' => 'dev-main'], 'test' => 'false']]);
@@ -167,7 +167,7 @@ it('reports a failing consumer, or one that will not install, without failing it
         ->and(json_decode($out, true)['results'][0])->toMatchArray(['passed' => false, 'exit_code' => 1, 'summary' => 'App: `false` fails against the job (exit 1)'])
         ->and(json_decode($broken, true)['results'][0])->toMatchArray(['passed' => false, 'exit_code' => 2, 'summary' => 'installing App against the job failed'])
         ->and(file_exists($parent.'/App--impact-'.IMPACT_SPEC))->toBeFalse();
-});
+})->skipOnWindows(); // the fake `composer` is a #!/bin/sh script, and the consumer's test is `false`
 
 it('lists the consumers, and refuses to test before the job worktree exists', function () {
     [, $project] = impactWorkspace(['App' => ['require' => ['refactor-circus/fixture' => 'dev-main']]]);
