@@ -21,15 +21,112 @@ export const meta = {
 // The script never reads files; agents do, and each writes its own report.
 // ---------------------------------------------------------------------------
 
-const { spec, job, waves, decisions = [], index = {}, reviewers = [], config, workspace = null, impact = { enabled: false, consumers: [] }, replay = false, replay_from = null, workflows_dir = null } = args
-// The cwd-proof gate command helper ships beside this script (D-010). The script has no
-// path of its own, so `ringside job --json` passes the folder as workflows_dir (D-013).
-if (!workflows_dir) throw new Error('args.workflows_dir is missing: build the args with `vendor/bin/ringside job <spec> --json` from this Ringside version.')
-const fileUrl = path => {
-  const p = String(path).replace(/\\/g, '/')
-  return `file://${p.startsWith('/') ? '' : '/'}${encodeURI(p).replace(/[?#]/g, encodeURIComponent)}`
+const { spec, job, waves, decisions = [], index = {}, reviewers = [], config, workspace = null, impact = { enabled: false, consumers: [] }, replay = false, replay_from = null } = args
+// cwdProof: an exact copy of resources/workflows/gate-command.js (D-010). The Workflow tool runs
+// a script on its own and loads no other module, so the helper is inlined; a test keeps the copy identical.
+// --- cwdProof:begin ---
+const WORKING_DIR = '--working-dir='
+const ENV_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*=/
+
+function cwdProof(tree, command) {
+  if (typeof command !== 'string' || command.trim() === '' || command.includes(WORKING_DIR)) {
+    return command
+  }
+
+  const quoted = `'${String(tree).replace(/'/g, `'\\''`)}'`
+
+  return split(command)
+    .map((part, i) => (i % 2 === 1 ? part : rewrite(part, quoted)))
+    .join('')
 }
-const { cwdProof } = await import(fileUrl(`${workflows_dir}/gate-command.js`))
+
+function rewrite(segment, quoted) {
+  const [, lead, core, trail] = segment.match(/^(\s*)(.*?)(\s*)$/s)
+
+  if (core === '' || ENV_PREFIX.test(core)) {
+    return segment
+  }
+
+  const binary = core.match(/^vendor\/bin\/(\S+)(.*)$/s)
+
+  if (binary) {
+    return `${lead}composer --working-dir=${quoted} exec -- ${binary[1]}${binary[2]}${trail}`
+  }
+
+  const composer = core.match(/^composer(\s+)(.*)$/s)
+
+  if (composer && !namesWorkingDir(composer[2])) {
+    return `${lead}composer --working-dir=${quoted}${composer[1]}${composer[2]}${trail}`
+  }
+
+  return segment
+}
+
+// `-d <dir>`, `-d<path>`, `--working-dir <dir>` or `--working-dir=<dir>`,
+// among Composer's own arguments (everything after a bare `--` belongs to the
+// script). `-d<path>` needs something path-like after the `-d` (`/`, `.`, `~`,
+// a quote, `$`, or a `/` further on), so an option such as `-dev` that only
+// starts with `-d` is not taken for a working dir.
+const SHORT_WORKING_DIR = /^-d(?:$|[/.~'"$]|\S*\/)/
+
+function namesWorkingDir(args) {
+  const tokens = args.split(/\s+/)
+  const end = tokens.indexOf('--')
+
+  return (end === -1 ? tokens : tokens.slice(0, end))
+    .some(t => t === '--working-dir' || t.startsWith(WORKING_DIR) || SHORT_WORKING_DIR.test(t))
+}
+
+// Splits a command at top-level `&&`, `||`, `;` and `|`, ignoring separators
+// inside quotes. Returns [segment, separator, segment, ...], so joining the
+// parts gives back the input exactly.
+function split(command) {
+  const parts = []
+  let current = ''
+  let quote = null
+
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]
+
+    if (quote) {
+      current += c
+      if (c === '\\' && quote === '"' && i + 1 < command.length) {
+        current += command[++i]
+      } else if (c === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (c === '\\' && i + 1 < command.length) {
+      current += c + command[++i]
+      continue
+    }
+
+    if (c === "'" || c === '"') {
+      quote = c
+      current += c
+      continue
+    }
+
+    const pair = command.slice(i, i + 2)
+    const separator = pair === '&&' || pair === '||' ? pair : (c === ';' || c === '|' ? c : null)
+
+    if (separator) {
+      parts.push(current, separator)
+      current = ''
+      i += separator.length - 1
+      continue
+    }
+
+    current += c
+  }
+
+  parts.push(current)
+
+  return parts
+}
+// --- cwdProof:end ---
 const SEVERITIES = ['architectural', 'blocker', 'major', 'minor', 'nit']
 const review = config.review
 const specDir = `${job.root}/${spec.dir}`
