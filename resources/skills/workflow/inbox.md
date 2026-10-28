@@ -8,7 +8,7 @@ argument-hint: "[--once | --answers | --task=<id> --session=<name>]"
 
 # Inbox
 
-RingMaster holds the user's queue and the answers they gave there. You reach it through its MCP server, `ring-master`: `queue-status`, `pending-answers`, `next-task`, `claim-task`, `heartbeat`, `link-spec`, `release-task`, `propose-task`. If those tools are not available, stop and tell the user to add the server once:
+RingMaster holds the user's queue and the answers they gave there. You reach it through its MCP server, `ring-master`: `queue-status`, `pending-answers`, `next-task`, `claim-task`, `heartbeat`, `link-spec`, `release-task`, `propose-task`, `precedents`. If those tools are not available, stop and tell the user to add the server once:
 
 ```bash
 claude mcp add --scope user ring-master -- php {{board_app}}/artisan mcp:start ring-master
@@ -28,7 +28,7 @@ RingMaster's runner starts headless sessions with one of two arguments; follow i
 Call `pending-answers`. For each spec it lists, in that spec's `project_path`:
 
 - **decisions**: invoke the `ring-master-decide` skill for that spec (Skill tool) and give it these answers instead of asking: each becomes the next `D-xxx` entry (choice = `answer`, rationale = `note`, raised by = `source`, "answered in RingMaster"), comes out of `questions.yml`, and the stage named by its `source` runs again (step 6 there).
-- **escalations**: `Approve as is` → invoke `ring-master-approve` (the user accepted it in RingMaster; don't ask again). `Send back with a note` → invoke `ring-master-rework` with the note.
+- **escalations**: `Approve as is` → invoke `ring-master-approve` (the user accepted it in RingMaster; don't ask again). `Send back with a note` → invoke `ring-master-rework` with the note. `Rebuild with variants` → invoke `ring-master-rework` with `--variants` and the note, if any: the factory builds the job several ways at once and keeps the best.
 
 Apply answers even when nothing is queued: they are what unblocks stopped jobs. Relaunching the stage is part of applying them; it runs unattended (below).
 
@@ -44,7 +44,7 @@ Call `next-task`. If there is none, say the queue is empty and stop. Otherwise `
 
 ## Follow-up jobs
 
-When a job needs a separate one first (a fix in another package, a release, anything the user decided belongs in its own job), never start it yourself and never do it inside this job. Call `propose-task` with the task that needs it (your claimed task, or, applying answers, the spec's `task_ids` from `pending-answers`), the other package's folder name as `project`, a title, a `body` written as the task for a fresh session, and the `reason`. The user accepts or declines it in RingMaster's Inbox; your task waits, blocked, and resumes by itself once the follow-up is done or its PR is merged. Then `release-task` with the reason if you hold a claim, and stop work on that job.
+When a job needs a separate one first (a fix in another package, a release, anything the user decided belongs in its own job), never start it yourself and never do it inside this job. Call `propose-task` with the task that needs it (your claimed task, or, applying answers, the spec's `task_ids` from `pending-answers`), the other package's folder name as `project`, a title, a `body` written as the task for a fresh session, and the `reason`. The user accepts or declines it in RingMaster's Inbox; your task waits, blocked, and resumes by itself once the follow-up is done or its PR is merged. The other way round, for work that must come after your job (a package your change breaks, which the factory's impact check reports): pass `waits_for_this: true` and `blocks: false`, so the follow-up waits for your task's PR to merge and your job goes on. Then `release-task` with the reason if you hold a claim, and stop work on that job.
 
 Every stage is a skill you invoke with the Skill tool; this one is the only one the user has to start.
 
@@ -53,8 +53,10 @@ Every stage is a skill you invoke with the Skill tool; this one is the only one 
 The user is not watching this session; RingMaster is where they answer. Wherever a stage would ask them anything (AskUserQuestion, confirming a ticket draft, confirming the standards list, approving the spec):
 
 1. Make sure the spec folder exists first (create it as the stage would, with the status it would have), so the question has a home.
-2. Write each question to the spec's `questions.yml` (format in `/ring-master-decide`) with concrete options, your recommendation (the exact text of one option, not a letter), the evidence in one line, and `source:` the stage to come back to: `ticket`, `shape`, `spec-review`, `approval`, `tasks` or `build`. Ask everything that stage needs in one go.
+2. Write each question to the spec's `questions.yml` (format in `/ring-master-decide`) with concrete options, your recommendation (the exact text of one option, not a letter), the evidence in one line, and `source:` the stage to come back to: `ticket`, `shape`, `spec-review`, `approval`, `tasks` or `build`. Ask everything that stage needs in one go. Check each against `precedents` first (below).
 3. Set `status: needs-decision` in `meta.yml`, call `heartbeat` with "Waiting on you: <first question>", and move on to the next task.
+
+{{precedent}}
 
 Run one command per Bash call (no `;`, `&&` or pipes): a session started by RingMaster's runner may only run the commands it allows, and a compound command is refused as a whole.
 

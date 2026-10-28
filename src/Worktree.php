@@ -16,6 +16,9 @@ final class Worktree
     /** The `build.worktree.setup` value that installs from composer.local.json when the package has one. */
     public const string AUTO = 'auto';
 
+    /** The suffix of a replay's worktree path and branch, so a replay never touches the real job's. */
+    public const string REPLAY = '--replay';
+
     /** @var list<string> */
     private const array LOCAL_FILES = ['composer.local.json', 'composer.local.lock'];
 
@@ -59,6 +62,145 @@ final class Worktree
         }
 
         return $absolute;
+    }
+
+    /**
+     * Creates (or reuses) one worktree per task group beside the job
+     * worktree, `<job worktree>--g<n>` on `<job branch>--g<n>` branched from
+     * the job branch, so groups of a parallel wave never share a checkout.
+     *
+     * @param  list<int>  $groups
+     * @return array<int, array{path: string, branch: string}>
+     */
+    public static function groups(Project $project, string $jobPath, string $jobBranch, array $groups): array
+    {
+        return self::beside($project, $jobPath, $jobBranch, 'g', $groups);
+    }
+
+    /**
+     * Creates (or reuses) one worktree per variant of a job built several
+     * times over, `<job worktree>--v<n>` on `<job branch>--v<n>` branched from
+     * the job branch; the judge's pick is fast-forwarded into the job branch.
+     *
+     * @param  list<int>  $variants
+     * @return array<int, array{path: string, branch: string}>
+     */
+    public static function variants(Project $project, string $jobPath, string $jobBranch, array $variants): array
+    {
+        return self::beside($project, $jobPath, $jobBranch, 'v', $variants);
+    }
+
+    /**
+     * Removes every group worktree of the job and deletes the group branches
+     * (their commits are merged into the job branch by then).
+     *
+     * @return list<string> what was done
+     */
+    public static function removeGroups(Project $project, string $jobPath, string $jobBranch): array
+    {
+        return self::removeBeside($project, $jobPath, $jobBranch, '--g', '\d+');
+    }
+
+    /**
+     * Removes every variant worktree of the job and deletes their branches
+     * (the winner's commits are on the job branch by then).
+     *
+     * @return list<string> what was done
+     */
+    public static function removeVariants(Project $project, string $jobPath, string $jobBranch): array
+    {
+        return self::removeBeside($project, $jobPath, $jobBranch, '--v', '\d+');
+    }
+
+    /**
+     * Removes the worktree and branch of a replay (`<job worktree>--replay`
+     * on `<job branch>--replay`, whose own variants come with it).
+     *
+     * @return list<string> what was done
+     */
+    public static function removeReplay(Project $project, string $jobPath, string $jobBranch): array
+    {
+        return [
+            ...self::removeVariants($project, $jobPath.self::REPLAY, $jobBranch.self::REPLAY),
+            ...self::removeBeside($project, $jobPath, $jobBranch, self::REPLAY, ''),
+        ];
+    }
+
+    public static function groupBranch(string $jobBranch, int $n): string
+    {
+        return "{$jobBranch}--g{$n}";
+    }
+
+    public static function groupPath(Project $project, string $jobPath, int $n): string
+    {
+        return self::absolute($project, $jobPath)."--g{$n}";
+    }
+
+    public static function variantBranch(string $jobBranch, int $n): string
+    {
+        return "{$jobBranch}--v{$n}";
+    }
+
+    public static function variantPath(Project $project, string $jobPath, int $n): string
+    {
+        return self::absolute($project, $jobPath)."--v{$n}";
+    }
+
+    /**
+     * @param  list<int>  $numbers
+     * @return array<int, array{path: string, branch: string}>
+     */
+    private static function beside(Project $project, string $jobPath, string $jobBranch, string $kind, array $numbers): array
+    {
+        $created = [];
+
+        foreach ($numbers as $n) {
+            $branch = "{$jobBranch}--{$kind}{$n}";
+            $created[$n] = ['path' => self::prepare($project, self::absolute($project, $jobPath)."--{$kind}{$n}", $branch, $jobBranch), 'branch' => $branch];
+        }
+
+        return $created;
+    }
+
+    /**
+     * Removes the worktrees `<job worktree><suffix><n>` and deletes the
+     * branches `<job branch><suffix><n>`, where <n> matches $number.
+     *
+     * @return list<string> what was done
+     */
+    private static function removeBeside(Project $project, string $jobPath, string $jobBranch, string $suffix, string $number): array
+    {
+        $log = [];
+        $job = self::absolute($project, $jobPath);
+        // git lists real paths (/private/var for /var on macOS), so both spellings count.
+        $prefixes = array_unique([$job.$suffix, (realpath(dirname($job)) ?: dirname($job)).'/'.basename($job).$suffix]);
+        $pattern = '/'.preg_quote($suffix, '/').$number.'$/';
+        [, $list] = Shell::run(['git', 'worktree', 'list', '--porcelain'], $project->root);
+
+        foreach (explode("\n", $list) as $line) {
+            $path = str_starts_with($line, 'worktree ') ? substr($line, 9) : '';
+            $ours = array_filter($prefixes, static fn (string $prefix): bool => str_starts_with($path, $prefix)) !== [];
+
+            if ($path !== '' && $ours && preg_match($pattern, $path) === 1) {
+                [$code, $out] = Shell::run(['git', 'worktree', 'remove', '--force', $path], $project->root, withStderr: true);
+                $log[] = $code === 0 ? "Removed {$path}" : "Kept {$path}: {$out}";
+            }
+        }
+
+        [, $branches] = Shell::run(['git', 'for-each-ref', '--format=%(refname:short)', 'refs/heads/'.$jobBranch.$suffix.($number === '' ? '' : '*')], $project->root);
+
+        foreach (array_filter(explode("\n", $branches)) as $branch) {
+            if (preg_match('/'.preg_quote($suffix, '/').$number.'$/', $branch) !== 1) {
+                continue;
+            }
+
+            [$code, $out] = Shell::run(['git', 'branch', '-D', $branch], $project->root, withStderr: true);
+            $log[] = $code === 0 ? "Deleted branch {$branch}" : "Kept branch {$branch}: {$out}";
+        }
+
+        Shell::run(['git', 'worktree', 'prune'], $project->root);
+
+        return $log;
     }
 
     /**

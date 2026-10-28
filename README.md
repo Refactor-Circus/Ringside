@@ -47,7 +47,19 @@ Each round starts with the gate (your verify command, the format check, `ringsid
 | `blocker`, `major`, `minor` | fixed automatically |
 | `nit` | never starts a round; listed in the PR |
 
-Rounds stop as soon as only nits remain, or at `review.rounds.max`, or when two rounds make no progress. A clean job opens a PR; nothing merges on its own.
+Rounds stop as soon as only nits remain, or at `review.rounds.max`, or when two rounds make no progress. A role with `escalate_model` moves up to it when things go wrong: the gate after a red gate, the reworker after a red gate or when the same major findings come back a round later. A clean job opens a PR; nothing merges on its own.
+
+With `build.parallel` on, the groups of a wave build at once. In a single package with per-job worktrees, each group gets its own worktree (`<job worktree>--g<n>` on `<branch>--g<n>`), so groups never fight over one checkout, and the integrator merges them into the job branch before the gate.
+
+Before it approves, the impact check runs the tests of every package that requires the changed ones (`impact.consumers`) against the job, each in a throwaway worktree of the consumer installed with the job's code. A failing consumer never stops the job: the PR lists it, and under RingMaster each one becomes a proposed follow-up job that waits for this PR to merge.
+
+A hard job can be built several ways at once. With `build.variants` above 1 (or `variants: N` in the spec's `meta.yml`, up to 4), the factory builds the whole job N times in parallel, each in its own worktree (`<job worktree>--v<n>` on `<branch>--v<n>`) with its own approach (simplest; closest to the existing patterns; most robust; a different approach) and model (`roles.variant.models`). Each is gated, then the `judge` keeps the best (a green gate, every criterion proven, least risk, then the smaller diff). It is fast-forwarded into the job branch and the review rounds go on as usual. Answering an escalation with "Rebuild with variants" (`/ring-master-rework --variants`) does this for one run with `build.escalation_variants` (3). Single packages with per-job worktrees only.
+
+When it approves, the `briefer` writes `brief.md` for whoever reviews the PR: a first line `Risk: low|medium|high`, then **What changed**, **Why**, **Look at** (one to five `path:line` places to read closely), **Tested** and **Risks**. The PR body starts with it.
+
+`/ring-master-factory <spec> --replay[=<commit>]` replays a job as an evaluation: it rebuilds every task group on `<branch>--replay` in `<job worktree>--replay` (from the commit, or the base branch), writes its reports under `<spec>/replay/`, never pushes, opens a PR, proposes a task or touches the spec's status, and ends by writing `<spec>/replay.json` (`status`, `rounds`, `gate_red_rounds`, `findings_left`, `nits`, `variants_winner`, `reasons`). RingMaster uses it to score a change to the factory against real past jobs before you adopt it.
+
+Under RingMaster, every skill that raises an architectural question first asks RingMaster's `precedents` tool for answers you gave to similar ones. A close match (similarity 0.5 or more) becomes the recommendation and the first line of the evidence ("Precedent: you chose …"), and you are still asked: a past answer is never applied for you.
 
 ## Workspaces
 
@@ -124,10 +136,15 @@ roles:                                 # model, effort, max_turns per role; ever
   planner:     { model: opus }         # skill: create-tasks
   prepare:     { model: haiku,  effort: low }
   implementer: { model: opus,   effort: high, max_turns: 40 }
-  reworker:    { model: opus,   effort: high, max_turns: 40 }
-  gate:        { model: sonnet, effort: low }
+  integrator:  { model: opus,   effort: high }                  # merges parallel group worktrees
+  reworker:    { model: opus,   effort: high, max_turns: 40, escalate_model: opus }   # escalate_model: null turns escalation off
+  gate:        { model: sonnet, effort: low, escalate_model: opus }
   reviewer:    { model: sonnet, effort: medium }
-  triage:      { model: haiku,  effort: low, enabled: false }
+  triage:      { model: haiku,  effort: low, enabled: true }    # dedupes findings when there is more than one
+  impact:      { model: sonnet, effort: low }                   # runs each consumer's tests against the job
+  variant:     { models: [opus, opus, sonnet, opus] }           # the implementer model of variant 1, 2, 3, 4
+  judge:       { model: opus,   effort: high }                  # keeps the best variant
+  briefer:     { model: sonnet, effort: low }                   # writes brief.md before the PR
   approver:    { model: sonnet, enabled: false }
   critic:      { model: sonnet, effort: medium }
   analyst:     { model: sonnet, effort: medium }
@@ -143,9 +160,14 @@ escalation:
   architectural_paths: [composer.json, config/**, database/migrations/**, '**/Contracts/**', .github/**]
   fix_others_first: true
 build:
-  parallel: false
+  parallel: true                         # groups of a wave build at once (own worktrees in a per-job package)
   max_concurrency: 2
+  variants: 1                            # build the whole job this many ways at once (up to 4) and keep the best; meta.yml variants: wins
+  escalation_variants: 3                 # what "Rebuild with variants" uses
   worktree: { mode: per-job, path: '../{package}--{spec}', setup: auto, cleanup: on_close }   # auto: composer.local.json when present, else composer install; or a command
+impact:
+  enabled: true
+  consumers: auto                      # auto: folders beside this one (and workspace packages) that require it; a list of folders; off
 discovery:
   enabled: true
   project: { mode: ask }               # ask | branch | pr
@@ -174,12 +196,13 @@ Built-in adapters: `github` (tracker and host, via `gh`), `jira` (tracker, via t
 | `sync [--force]` | rebuild the index, skills, subagents, hooks and the `AGENTS.md` block |
 | `check` | CI gate: config valid, generated files current, overrides reviewed, global standards architectural, adapters and reviewers present |
 | `ref <input>` | classify input as a ticket ref or an idea (JSON) |
-| `job <spec> --json` | the workflow arguments for a spec |
+| `job <spec> --json [--replay]` | the workflow arguments for a spec (`variants`, `brief`, `impact` included); `--replay` for a replay run |
 | `specs` | list specs with status and progress |
 | `index --accept <key>` | record a reviewed override |
 | `propose <key> --repo=<path>` | commit a global standards proposal on a branch of the global package |
 | `cleanup [--remove]` | list or remove finished job worktrees |
-| `worktrees <spec> [--setup\|--remove]` | create or reuse a job's worktree and, with `--setup`, install its dependencies; workspaces: a folder of package worktrees, which `--remove` removes |
+| `worktrees <spec> [--setup\|--remove\|--groups=1,3\|--remove-groups\|--variants=N\|--remove-variants\|--replay [--from=<commit>]\|--remove-replay]` | create or reuse a job's worktree and, with `--setup`, install its dependencies; `--groups` makes a worktree per task group from the job branch and `--variants=N` one per variant (2 to 4), the `--remove-…` options remove them and their branches; `--replay` acts on the replay worktree instead (from `--from`, default the base branch), `--remove-replay` removes it; workspaces: a folder of package worktrees, which `--remove` removes |
+| `impact <spec> [--package=<Folder>] [--list] [--json]` | run each consuming package's tests against the job worktree in a throwaway worktree of its own (exits 0 once the checks ran; the results say which pass), or list the consumers |
 | `new-package <Name> [--type] [--feature=...] [--dry-run]` | workspaces: scaffold, git init and register a new package |
 | `migrate [--dry-run]` | move an Agent OS install into `docs/agent/` |
 

@@ -45,6 +45,9 @@
         "bin/ringside"
     ],
     "scripts": {
+        "post-autoload-dump": [
+            "@php -r \"is_dir('vendor/bin') || mkdir('vendor/bin', 0777, true); file_exists('vendor/bin/ringside') || @symlink('../../bin/ringside', 'vendor/bin/ringside');\""
+        ],
         "lint": [
             "vendor/bin/pint --parallel"
         ],

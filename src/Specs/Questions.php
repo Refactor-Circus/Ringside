@@ -18,6 +18,9 @@ use Symfony\Component\Yaml\Yaml;
  *       recommendation: Per line
  *       evidence: src/Import.php:40
  *       source: build            # the stage to return to: ticket | shape | spec-review | approval | tasks | build
+ *
+ * A file that is not valid YAML reads as one question saying so, so the job
+ * never waits on questions nobody can see.
  */
 final class Questions
 {
@@ -30,8 +33,15 @@ final class Questions
     {
         try {
             $entries = Yaml::parse($yaml);
-        } catch (ParseException) {
-            return [];
+        } catch (ParseException $e) {
+            return [[
+                'id' => 'Q-YAML',
+                'question' => "This job's questions.yml is not valid YAML ({$e->getMessage()}), so its questions cannot be shown. Answer what to do, or fix the file and rescan.",
+                'options' => [],
+                'recommendation' => null,
+                'evidence' => mb_substr($yaml, 0, 2000),
+                'source' => 'build',
+            ]];
         }
 
         $questions = [];

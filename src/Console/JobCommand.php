@@ -18,13 +18,14 @@ final class JobCommand extends Command
     protected function configure(): void
     {
         $this->addArgument('spec', InputArgument::REQUIRED, 'Spec id, or a unique part of it')
-            ->addOption('json', null, InputOption::VALUE_NONE, 'Print JSON (the only format; accepted so the skills can say so)');
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Print JSON (the only format; accepted so the skills can say so)')
+            ->addOption('replay', null, InputOption::VALUE_NONE, 'For a replay: every task group undone, on the job branch and worktree with a --replay suffix');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         try {
-            $job = (new Job)->build($this->project(), (string) $input->getArgument('spec'));
+            $job = (new Job)->build($this->project(), (string) $input->getArgument('spec'), (bool) $input->getOption('replay'));
         } catch (RuntimeException $exception) {
             $output->writeln('<error>'.$exception->getMessage().'</error>');
 

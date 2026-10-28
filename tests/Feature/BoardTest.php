@@ -61,6 +61,18 @@ it('reads open questions from questions.yml, with their options and recommendati
         ->and($import['files'])->toContain('docs/agent/specs/2026-10-23-1430-import/questions.yml');
 });
 
+it('shows a questions.yml that is not valid YAML as one question saying so', function () {
+    $project = boardProject();
+    writeFixture($project->root, 'docs/agent/specs/2026-10-23-1430-import/questions.yml', "- id: Q-001\n  question: How?\n  options: [Rebase PR #8 first, Warm the cache]\n");
+
+    $import = (new Board([$project]))->data()['projects'][0]['specs'][0];
+
+    expect($import['questions'])->toBe(1)
+        ->and($import['open_questions'][0])->toMatchArray(['id' => 'Q-YAML', 'options' => []])
+        ->and($import['open_questions'][0]['question'])->toContain('not valid YAML')
+        ->and($import['open_questions'][0]['evidence'])->toContain('Rebase PR #8');
+});
+
 it('falls back to counting the questions in decision.md', function () {
     $import = (new Board([boardProject()]))->data()['projects'][0]['specs'][0];
 
