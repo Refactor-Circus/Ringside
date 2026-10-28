@@ -12,7 +12,7 @@ const WORKTREES_SPEC = '2026-10-25-1349-demo';
 const WORKTREES_BRANCH = 'ring-master/'.WORKTREES_SPEC;
 
 /**
- * A single package (no workspace.packages) holding one spec, committed as the
+ * A package holding one spec, committed as the
  * first commit of its own git repo on `main`.
  */
 function worktreesPackage(string $config = ''): Project
@@ -155,13 +155,6 @@ describe('a single package', function () {
             ->and(file_exists($this->path))->toBeFalse();
     });
 
-    it('refuses --remove', function () {
-        [$code, $out] = ringsideWorktrees($this->project->root, $this->bin, ['demo', '--remove']);
-
-        expect($code)->toBe(1)
-            ->and($out)->toContain('--remove is not supported');
-    });
-
     it('fails naming the key when build.worktree.setup is not a string', function () {
         $project = withConfig($this->project, "build:\n  worktree:\n    setup: [composer, install]\n");
 
@@ -170,35 +163,6 @@ describe('a single package', function () {
         expect($code)->toBe(1)
             ->and($out)->toContain('build.worktree.setup')
             ->and(file_exists($this->path))->toBeFalse();
-    });
-})->skipOnWindows();
-
-describe('a workspace', function () {
-    it('still builds the job folder and sets each package up its own way, ignoring auto', function () {
-        $root = fixtureProject([
-            'ring-master.yml' => "workspace:\n  packages: [Keystone, Atrium]\n",
-            'docs/agent/specs/'.WORKTREES_SPEC.'/meta.yml' => 'id: '.WORKTREES_SPEC."\ntitle: Demo\nstatus: approved\n",
-            'docs/agent/specs/'.WORKTREES_SPEC.'/tasks.md' => "## Group 1: Contract\npackage: Keystone\n- [ ] 1.1 Contract\n## Group 2: Screen\npackage: Atrium\ndepends on: 1\n- [ ] 2.1 Screen\n",
-        ])->root;
-        packageRepo($root, 'Keystone');
-        packageRepo($root, 'Atrium', ['acme/keystone' => '*'], ['local:install' => 'x']);
-        writeFixture($root, 'Keystone/composer.local.json', "{}\n");
-        $dir = '.ring-master/jobs/'.WORKTREES_SPEC;
-
-        // A caller's COMPOSER would reach the workspace install; clear it so the log shows only what ringside set.
-        [$code, $out] = ringsideWorktrees($root, $this->bin, ['demo', '--setup'], ['COMPOSER' => '']);
-
-        expect($code)->toBe(0)
-            ->and($out)->toBe(implode("\n", [
-                "Keystone: {$dir}/Keystone on ".WORKTREES_BRANCH.', set up with `composer install --no-interaction`',
-                "Atrium: {$dir}/Atrium on ".WORKTREES_BRANCH.', set up with `composer local:install --no-interaction`',
-                'Linked: none',
-            ]))
-            ->and(file($this->bin.'/composer.log', FILE_IGNORE_NEW_LINES))->toBe([
-                'install --no-interaction|<unset>',
-                'local:install --no-interaction|<unset>',
-            ])
-            ->and(file_exists("{$root}/{$dir}/Keystone/composer.local.json"))->toBeFalse();
     });
 })->skipOnWindows();
 
@@ -248,18 +212,5 @@ describe('variants and replays', function () {
             ->and(is_dir($this->path.'--replay'))->toBeFalse()
             ->and(is_dir($this->path.'--replay--v1'))->toBeFalse()
             ->and(Shell::run(['git', 'branch', '--list', WORKTREES_BRANCH.'--replay*'], $this->project->root)[1])->toBe('');
-    });
-
-    it('refuses variants and replays in a workspace', function () {
-        $root = fixtureProject([
-            'ring-master.yml' => "workspace:\n  packages: [Keystone]\n",
-            'docs/agent/specs/'.WORKTREES_SPEC.'/meta.yml' => 'id: '.WORKTREES_SPEC."\ntitle: Demo\nstatus: approved\n",
-            'docs/agent/specs/'.WORKTREES_SPEC.'/tasks.md' => "## Group 1: Contract\npackage: Keystone\n- [ ] 1.1 Contract\n",
-        ])->root;
-        packageRepo($root, 'Keystone');
-
-        [$code, $out] = ringsideWorktrees($root, $this->bin, ['demo', '--replay']);
-
-        expect($code)->toBe(1)->and($out)->toContain('a workspace job builds once');
     });
 })->skipOnWindows();

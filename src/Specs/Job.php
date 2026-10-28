@@ -8,7 +8,6 @@ use RefactorCircus\Ringside\Impact;
 use RefactorCircus\Ringside\Project;
 use RefactorCircus\Ringside\Providers\ProviderRegistry;
 use RefactorCircus\Ringside\Standards\StandardsResolver;
-use RefactorCircus\Ringside\Workspace\Workspace;
 use RefactorCircus\Ringside\Worktree;
 use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
@@ -32,10 +31,14 @@ final class Job
     public function build(Project $project, string $spec, bool $replay = false): array
     {
         $dir = $this->dir($project, $spec);
-        $meta = Yaml::parse((string) $project->read($dir.'/meta.yml')) ?? [];
+        $id = basename($dir);
+        // The spec folder wherever it lives: the job worktree, or main once merged.
+        $path = Locator::find($project, $id) ?? $project->path($dir);
+        $read = static fn (string $name): string => is_file($path.'/'.$name) ? (string) file_get_contents($path.'/'.$name) : '';
+        $meta = Yaml::parse($read('meta.yml')) ?? [];
         $meta = is_array($meta) ? $meta : [];
         $parser = new TaskParser;
-        $groups = $parser->groups((string) $project->read($dir.'/tasks.md'));
+        $groups = $parser->groups($read('tasks.md'));
 
         if ($replay) {
             $groups = array_map(static fn (array $group): array => [
@@ -48,26 +51,7 @@ final class Job
         $waves = $parser->waves($groups);
         $resolution = (new StandardsResolver)->resolve($project);
         $providers = new ProviderRegistry($project);
-        $package = basename($project->root);
-        $id = basename($dir);
-
-        $workspace = new Workspace($project);
-        $changed = array_values(array_unique(array_filter(array_column($groups, 'package'))));
-
-        if ($workspace->enabled()) {
-            foreach ($groups as $group) {
-                if (! $group['done'] && ! in_array($group['package'], $workspace->packages(), true)) {
-                    throw new RuntimeException("Group {$group['n']} needs a `package:` line naming one of the workspace packages (".implode(', ', $workspace->packages()).'). A new package must be created first: list it under new_packages in meta.yml and run vendor/bin/ringside new-package.');
-                }
-            }
-        }
-
-        $described = $workspace->enabled() ? $workspace->describe($changed) : null;
-        $impact = Impact::consumers(
-            $project,
-            $described === null ? [Impact::name($project->root)] : array_values(array_map(static fn (array $p): string => $p['name'], $described)),
-            $described === null ? [] : array_keys($described),
-        );
+        $impact = Impact::consumers($project, [Impact::name($project->root)]);
 
         $index = [];
 
@@ -79,31 +63,29 @@ final class Job
             'spec' => [
                 'id' => $id,
                 'dir' => $dir,
+                // Absolute: every stage reads and writes the spec here, and commits it with the job.
+                'path' => $path,
                 'title' => is_string($meta['title'] ?? null) ? $meta['title'] : $id,
                 'status' => is_string($meta['status'] ?? null) ? $meta['status'] : 'unknown',
                 'ticket' => $meta['ticket'] ?? null,
-                'standards' => $this->standardPaths((string) $project->read($dir.'/standards.md'), $index),
+                'standards' => $this->standardPaths($read('standards.md'), $index),
             ],
             'job' => [
-                'branch' => 'ring-master/'.$id.($replay ? Worktree::REPLAY : ''),
-                'worktree' => strtr($project->config->string('build.worktree.path'), ['{package}' => $package, '{spec}' => $id]).($replay ? Worktree::REPLAY : ''),
+                'branch' => self::branch($id).($replay ? Worktree::REPLAY : ''),
+                'worktree' => self::worktree($project, $id).($replay ? Worktree::REPLAY : ''),
                 'root' => $project->root,
             ],
             'replay' => $replay,
             // Absolute folder of the workflow scripts this Ringside ships: the factory imports its helper modules from it (D-013).
             'workflows_dir' => dirname(__DIR__, 2).'/resources/workflows',
             // How many times over the build runs, the judge keeping the best; 1 builds once.
-            'variants' => $this->variants($project, $meta, $workspace->enabled()),
-            'brief' => is_file($project->path($dir.'/brief.md')) ? $dir.'/brief.md' : null,
+            'variants' => $this->variants($project, $meta),
+            'brief' => is_file($path.'/brief.md') ? $dir.'/brief.md' : null,
             'waves' => $waves,
             'warnings' => $parser->overlaps($waves),
-            'decisions' => (new Decisions)->parse((string) $project->read($dir.'/decisions.md')),
+            'decisions' => (new Decisions)->parse($read('decisions.md')),
             'index' => $index,
             'reviewers' => $project->config->reviewers(),
-            'workspace' => $workspace->enabled() ? [
-                'dir' => $workspace->jobDir($id),
-                'packages' => $described,
-            ] : null,
             // The impact gate: packages that require the changed ones, tested against the job before it approves.
             'impact' => [
                 'enabled' => $project->config->bool('impact.enabled') && $impact !== [],
@@ -114,16 +96,31 @@ final class Job
         ];
     }
 
+    /** The job branch of spec $id. */
+    public static function branch(string $id): string
+    {
+        return Locator::BRANCH_PREFIX.$id;
+    }
+
+    /**
+     * The job worktree of spec $id, from `build.worktree.path`: relative to
+     * the package root unless the setting is absolute.
+     */
+    public static function worktree(Project $project, string $id): string
+    {
+        return strtr($project->config->string('build.worktree.path'), ['{package}' => basename($project->root), '{spec}' => $id]);
+    }
+
     /**
      * `variants:` in meta.yml, else `build.variants`, between 1 and
-     * MAX_VARIANTS. Only a single package with a worktree per job builds
-     * variants (each needs a worktree of its own); anything else builds once.
+     * MAX_VARIANTS. Only a package with a worktree per job builds variants
+     * (each needs a worktree of its own); anything else builds once.
      *
      * @param  array<mixed>  $meta
      */
-    private function variants(Project $project, array $meta, bool $workspace): int
+    private function variants(Project $project, array $meta): int
     {
-        if ($workspace || $project->config->string('build.worktree.mode') !== 'per-job') {
+        if ($project->config->string('build.worktree.mode') !== 'per-job') {
             return 1;
         }
 
@@ -132,23 +129,28 @@ final class Job
         return max(1, min(self::MAX_VARIANTS, $value));
     }
 
+    /**
+     * The spec's folder relative to a checkout root (`docs/agent/specs/<id>`),
+     * from its id, that relative path, or a unique part of the id; the folder
+     * may be in the job worktree (see Locator).
+     */
     public function dir(Project $project, string $spec): string
     {
-        $specs = $project->agentPath('specs');
+        $specs = Locator::relative($project);
+        $all = Locator::all($project);
+        $id = basename(trim($spec, '/'));
 
-        foreach ([$spec, $specs.'/'.$spec] as $candidate) {
-            if (is_dir($project->path($candidate)) && is_file($project->path($candidate.'/meta.yml'))) {
-                return trim($candidate, '/');
-            }
+        if (isset($all[$id]) && is_file($all[$id].'/meta.yml')) {
+            return $specs.'/'.$id;
         }
 
-        $matches = glob($project->path($specs).'/*'.$spec.'*', GLOB_ONLYDIR) ?: [];
+        $matches = array_values(array_filter(array_keys($all), static fn (string $candidate): bool => str_contains($candidate, $spec)));
 
         if (count($matches) === 1) {
-            return $specs.'/'.basename($matches[0]);
+            return $specs.'/'.$matches[0];
         }
 
-        throw new RuntimeException(count($matches) > 1 ? "`{$spec}` matches several specs; use the full id." : "No spec `{$spec}` in {$specs}/.");
+        throw new RuntimeException(count($matches) > 1 ? "`{$spec}` matches several specs; use the full id." : "No spec `{$spec}` in {$specs}/ or a job worktree.");
     }
 
     /**

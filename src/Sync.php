@@ -84,6 +84,6 @@ final class Sync
             .($app === null ? '' : '# ring-master-app: '.$app."\n")
             .'ringside: '.count($resolution->standards).' standards ['.implode(', ', $categories).'], index '.self::indexPath($project).".\n"
             ."Workflow: /ring-master-shape-spec -> /ring-master-write-spec -> /ring-master-create-tasks -> /ring-master-implement -> /ring-master-verify-spec.\n"
-            .'Done means `'.$project->config->string('commands.verify').'` passes. Specs live in '.(new SpecRepository)->dir($project)."/.\n";
+            .'Done means `'.$project->config->string('commands.verify').'` passes. Specs live in '.(new SpecRepository)->dir($project)."/ of each job's worktree (`ringside spec path <id>` finds one).\n";
     }
 }

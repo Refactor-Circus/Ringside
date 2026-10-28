@@ -126,9 +126,23 @@ match ($argv[1] ?? '') {
 
         $next = ['building' => '/ring-master-factory', 'needs-decision' => '/ring-master-decide', 'escalated' => '/ring-master-approve or /ring-master-rework', 'in-progress' => '/ring-master-implement', 'merged' => '/ring-master-post-mortem'];
 
+        // Merged specs on main, then each job's own in its worktree (on ring-master/<id> or <id>-record), which wins.
+        $metas = [];
+
         foreach (glob($root.'/'.$agentDir.'/specs/*/meta.yml') ?: [] as $meta) {
+            $metas[basename(dirname($meta))] = $meta;
+        }
+
+        foreach (preg_split('/\R\R/', trim((string) shell_exec('git -C '.escapeshellarg($root).' worktree list --porcelain 2>/dev/null'))) ?: [] as $entry) {
+            if (preg_match('/^worktree (.+)$/m', $entry, $tree) && preg_match('~^branch refs/heads/ring-master/(.+?)(?:-record)?$~m', $entry, $id) && is_file($tree[1].'/'.$agentDir.'/specs/'.$id[1].'/meta.yml')) {
+                $metas[$id[1]] = $tree[1].'/'.$agentDir.'/specs/'.$id[1].'/meta.yml';
+            }
+        }
+
+        foreach ($metas as $id => $meta) {
             if (preg_match('/^status:\s*[\'"]?([a-z-]+)/m', (string) file_get_contents($meta), $status) && isset($next[$status[1]])) {
-                echo ucfirst($status[1]).': '.$agentDir.'/specs/'.basename(dirname($meta)).'/ (next: '.$next[$status[1]].")\n";
+                $folder = dirname($meta);
+                echo ucfirst($status[1]).': '.(str_starts_with($folder, $root.'/') ? substr($folder, strlen($root) + 1) : $folder).'/ (next: '.$next[$status[1]].")\n";
             }
         }
     })($root, $agentDir),

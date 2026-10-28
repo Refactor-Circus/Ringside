@@ -158,7 +158,7 @@ final readonly class Config
                 'session_start_summary' => true,
             ],
             'pint' => ['allow_diff' => false],
-            'workspace' => ['packages' => [], 'jobs_dir' => '.ring-master/jobs'],
+            'workspace' => ['packages' => []],
             'board' => ['app' => null],              // path to the RingMaster app; enables /ring-master-inbox and the session summary
             'new_package' => [
                 'type' => 'laravel',                 // laravel: `laravel package`; php: `composer init`

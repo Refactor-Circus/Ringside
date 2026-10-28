@@ -70,25 +70,14 @@ final class Impact
     }
 
     /**
-     * The job's changed packages as composer name => the job worktree that
-     * holds their new code: the package's own job worktree, or in a
-     * workspace each changed package's folder in the job folder.
+     * The job's package as composer name => the job worktree that holds its
+     * new code (the package itself when it builds without a job worktree).
      *
      * @param  array<string, mixed>  $job  the output of Job::build
      * @return array<string, string>
      */
     public static function targets(Project $project, array $job): array
     {
-        if (is_array($job['workspace'] ?? null)) {
-            $trees = [];
-
-            foreach ((array) $job['workspace']['packages'] as $folder => $package) {
-                $trees[(string) $package['name']] = $project->path($job['workspace']['dir'].'/'.$folder);
-            }
-
-            return $trees;
-        }
-
         $tree = $project->config->string('build.worktree.mode') === 'per-job' ? self::absolute($project, (string) $job['job']['worktree']) : $project->root;
 
         return [self::name($project->root) => realpath($tree) ?: $tree];

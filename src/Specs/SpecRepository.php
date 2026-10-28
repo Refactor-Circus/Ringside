@@ -24,8 +24,7 @@ final class SpecRepository
     {
         $specs = [];
 
-        foreach (glob($project->path($this->dir($project)).'/*', GLOB_ONLYDIR) ?: [] as $folder) {
-            $id = basename($folder);
+        foreach (Locator::all($project) as $id => $folder) {
             $metaFile = $folder.'/meta.yml';
 
             try {

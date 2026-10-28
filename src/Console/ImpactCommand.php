@@ -37,7 +37,7 @@ final class ImpactCommand extends Command
             $job = (new Job)->build($project, (string) $input->getArgument('spec'));
             $trees = Impact::targets($project, $job);
             // The same consumers `ringside job` lists, typed: every package that requires a changed one, outside the job.
-            $consumers = Impact::consumers($project, array_keys($trees), is_array($job['workspace'] ?? null) ? array_map(strval(...), array_keys((array) $job['workspace']['packages'])) : []);
+            $consumers = Impact::consumers($project, array_keys($trees));
             $only = $input->getOption('package');
 
             if (is_string($only)) {

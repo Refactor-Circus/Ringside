@@ -7,9 +7,9 @@ namespace RefactorCircus\Ringside;
 use RuntimeException;
 
 /**
- * A single package's per-job worktree: a checkout of the job branch next to
- * the package, set up so the package's gates run inside it. The single-package
- * counterpart of Workspace::prepare.
+ * A package's per-job worktree: a checkout of the job branch next to the
+ * package, made when the spec is (it holds the spec's record) and set up so
+ * the package's gates run inside it.
  */
 final class Worktree
 {
@@ -68,6 +68,40 @@ final class Worktree
         }
 
         return $absolute;
+    }
+
+    /**
+     * Rebases a job branch that holds nothing but its spec record onto
+     * $base, so a job shaped days ago builds on today's code. A branch with
+     * any other change, uncommitted work or a failed rebase is left as it was.
+     *
+     * @return string|null what was done, or null when nothing was
+     */
+    public static function refresh(string $worktree, string $base, string $specDir): ?string
+    {
+        [$code, $status] = Shell::run(['git', 'status', '--porcelain'], $worktree);
+        [$ahead, $files] = Shell::run(['git', 'diff', '--name-only', $base.'...HEAD'], $worktree);
+        [$current] = Shell::run(['git', 'merge-base', '--is-ancestor', $base, 'HEAD'], $worktree);
+
+        if ($code !== 0 || $status !== '' || $ahead !== 0 || $current === 0) {
+            return null;
+        }
+
+        foreach (array_filter(explode("\n", $files)) as $file) {
+            if (! str_starts_with($file, rtrim($specDir, '/').'/')) {
+                return null;
+            }
+        }
+
+        [$code] = Shell::run(['git', 'rebase', $base], $worktree, withStderr: true);
+
+        if ($code !== 0) {
+            Shell::run(['git', 'rebase', '--abort'], $worktree);
+
+            return "Could not rebase onto {$base}; kept the branch as it was";
+        }
+
+        return "Rebased onto {$base}";
     }
 
     /**

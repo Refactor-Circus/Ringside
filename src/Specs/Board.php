@@ -9,9 +9,10 @@ use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Every job's state, read from the spec folders on disk; the RingMaster app
- * imports from this. Agents write their reports as they go, so reading it
- * again shows a run as it happens.
+ * Every job's state, read from the spec folders on disk (each in its job's
+ * worktree, or on main once merged; see Locator); the RingMaster app imports
+ * from this. Agents write their reports as they go, so reading it again shows
+ * a run as it happens.
  */
 final class Board
 {
@@ -41,10 +42,12 @@ final class Board
         $projects = [];
 
         foreach ($this->projects as $i => $project) {
+            $worktrees = Locator::worktrees($project);
+            $specs = Locator::all($project, $worktrees);
             $projects[] = [
                 'id' => $i,
                 'name' => self::packageName($project),
-                'specs' => array_map(fn (string $dir): array => $this->spec($project, $dir), $this->specDirs($project)),
+                'specs' => array_map(fn (string $id, string $path): array => $this->spec($project, $id, $path, $worktrees[$id] ?? null), array_keys($specs), $specs),
             ];
         }
 
@@ -57,19 +60,24 @@ final class Board
     }
 
     /**
-     * A markdown or YAML file inside one of the project's spec folders, or null
-     * for anything else: never reads files outside them.
+     * A markdown or YAML file inside one of the project's spec folders, named
+     * by its path from the checkout root (`docs/agent/specs/<id>/spec.md`,
+     * read from wherever that spec lives), or null for anything else: never
+     * reads files outside them.
      */
     public function file(int $project, string $relative): ?string
     {
         $root = $this->project($project);
+        $prefix = $root === null ? '' : Locator::relative($root).'/';
 
-        if ($root === null || ! preg_match('/\.(md|ya?ml)$/', $relative)) {
+        if ($root === null || ! preg_match('/\.(md|ya?ml)$/', $relative) || ! str_starts_with(ltrim($relative, '/'), $prefix)) {
             return null;
         }
 
-        $specs = realpath($root->path((new SpecRepository)->dir($root)));
-        $file = realpath($root->path($relative));
+        [$id, $inside] = array_pad(explode('/', substr(ltrim($relative, '/'), strlen($prefix)), 2), 2, '');
+        $folder = Locator::find($root, $id);
+        $specs = $folder === null ? false : realpath($folder);
+        $file = $specs === false ? false : realpath($specs.'/'.$inside);
 
         if ($specs === false || $file === false || ! str_starts_with($file, $specs.DIRECTORY_SEPARATOR) || ! is_file($file)) {
             return null;
@@ -90,30 +98,20 @@ final class Board
     }
 
     /**
-     * @return list<string> spec folder paths relative to the project root
-     */
-    private function specDirs(Project $project): array
-    {
-        $specs = (new SpecRepository)->dir($project);
-        $dirs = [];
-
-        foreach (glob($project->path($specs).'/*', GLOB_ONLYDIR) ?: [] as $dir) {
-            $dirs[] = $specs.'/'.basename($dir);
-        }
-
-        rsort($dirs);
-
-        return $dirs;
-    }
-
-    /**
+     * $path is the spec folder wherever it lives ($worktree, when it is in a
+     * job worktree); dir, files and report paths
+     * stay relative to the checkout root, the same in every checkout.
+     *
      * @return array<string, mixed>
      */
-    private function spec(Project $project, string $dir): array
+    private function spec(Project $project, string $id, string $path, ?string $worktree): array
     {
+        $dir = Locator::relative($project).'/'.$id;
+        $read = static fn (string $name): ?string => is_file($path.'/'.$name) ? (string) file_get_contents($path.'/'.$name) : null;
+
         // A meta.yml a session broke must not take the whole board down: the spec reads as unreadable, with why.
         try {
-            $meta = Yaml::parse((string) $project->read($dir.'/meta.yml')) ?? [];
+            $meta = Yaml::parse((string) $read('meta.yml')) ?? [];
             $metaError = null;
         } catch (ParseException $e) {
             $meta = [];
@@ -122,17 +120,20 @@ final class Board
 
         $meta = is_array($meta) ? $meta : [];
         $status = $metaError !== null ? self::UNREADABLE : (is_string($meta['status'] ?? null) ? $meta['status'] : 'unknown');
-        $groups = (new TaskParser)->groups((string) $project->read($dir.'/tasks.md'));
+        $groups = (new TaskParser)->groups((string) $read('tasks.md'));
         $tasks = array_merge(...array_map(static fn (array $group): array => $group['tasks'], $groups ?: [['tasks' => []]]));
-        $rounds = $this->rounds($project, $dir);
-        $decisionFile = (string) $project->read($dir.'/decision.md');
-        $questionsFile = $project->read($dir.'/'.Questions::FILE);
+        $rounds = $this->rounds($dir, $path);
+        $decisionFile = (string) $read('decision.md');
+        $questionsFile = $read(Questions::FILE);
         $questions = $questionsFile === null ? [] : (new Questions)->parse($questionsFile);
 
         return [
-            'id' => basename($dir),
+            'id' => $id,
             'dir' => $dir,
-            'title' => is_string($meta['title'] ?? null) ? $meta['title'] : basename($dir),
+            'path' => $path,
+            // The job worktree that holds the spec, or null once it is only on main.
+            'worktree' => $worktree,
+            'title' => is_string($meta['title'] ?? null) ? $meta['title'] : $id,
             'status' => $status,
             'meta_error' => $metaError,
             'column' => self::column($status),
@@ -148,23 +149,23 @@ final class Board
             'groups' => count($groups),
             'packages' => array_values(array_unique(array_filter(array_column($groups, 'package')))),
             'rounds' => $rounds,
-            'decisions' => count((new Decisions)->parse((string) $project->read($dir.'/decisions.md'))),
+            'decisions' => count((new Decisions)->parse((string) $read('decisions.md'))),
             'decision' => preg_match('/^\W*(APPROVED|NEEDS-DECISION|ESCALATED)\b/mi', $decisionFile, $m) ? strtolower($m[1]) : null,
             'questions' => $questionsFile !== null ? count($questions) : ($status === 'needs-decision' ? (int) preg_match_all('/^\d+\.\s+\*\*/m', $decisionFile) : 0),
             'open_questions' => $questions,
-            'files' => $this->files($project, $dir),
-            'updated' => $this->updated($project, $dir),
+            'files' => $this->files($dir, $path),
+            'updated' => $this->updated($path),
         ];
     }
 
     /**
      * @return list<array{n: int, reports: list<array{name: string, verdict: ?string, path: string}>}>
      */
-    private function rounds(Project $project, string $dir): array
+    private function rounds(string $dir, string $path): array
     {
         $rounds = [];
 
-        foreach (glob($project->path($dir).'/round-*', GLOB_ONLYDIR) ?: [] as $roundDir) {
+        foreach (glob($path.'/round-*', GLOB_ONLYDIR) ?: [] as $roundDir) {
             $reports = [];
 
             foreach (glob($roundDir.'/*.md') ?: [] as $file) {
@@ -190,12 +191,12 @@ final class Board
     /**
      * @return list<string>
      */
-    private function files(Project $project, string $dir): array
+    private function files(string $dir, string $path): array
     {
         $files = [];
 
         foreach (['meta.yml', 'shape.md', 'spec.md', 'spec-review.md', 'decisions.md', 'standards.md', 'tasks.md', 'build.md', 'decision.md', 'questions.yml', 'verification.md', 'post-mortem.md', 'references.md', 'brief.md', 'variants.md'] as $name) {
-            if ($project->exists($dir.'/'.$name)) {
+            if (file_exists($path.'/'.$name)) {
                 $files[] = $dir.'/'.$name;
             }
         }
@@ -203,11 +204,11 @@ final class Board
         return $files;
     }
 
-    private function updated(Project $project, string $dir): int
+    private function updated(string $path): int
     {
         $latest = 0;
 
-        foreach ([...(glob($project->path($dir).'/*') ?: []), ...(glob($project->path($dir).'/round-*/*') ?: [])] as $file) {
+        foreach ([...(glob($path.'/*') ?: []), ...(glob($path.'/round-*/*') ?: [])] as $file) {
             $latest = max($latest, (int) filemtime($file));
         }
 
