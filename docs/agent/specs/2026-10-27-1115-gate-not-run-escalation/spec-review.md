@@ -16,3 +16,18 @@ Changed in spec.md. The open questions were left untouched and are now listed un
 - AC8: factory.md also documents the reason prefix.
 
 Not changed, because they depend on the open questions: precedence of `not_run` over findings or `passed`, variant eligibility and the all-variants-`not_run` outcome, the done-definition source, and the helper's handling of non-composer commands.
+
+### Second pass (decided D-003 to D-007 applied, open questions still untouched)
+
+- AC1: restated as behaviour (no field, null gate, `not_run: null` complete without throwing); entries coerced with `String(x ?? '')` and reasons truncated to 500 characters; a malformed-entry simulation (risk, testability).
+- AC3: lists the three prompt builders (variant, single, workspace per-package); asserts the substrings `composer --working-dir=`, `not_run`, `did not start` and `exact refusal text`; the no-`vendor/bin/` check runs on a `vendor/bin/pest` fixture and confirms `common` has none (risk, testability).
+- AC5: one reason per entry in gate order; `<command>` is the form the gate reported (rewritten); example string given (testability).
+- AC6: `red` dropped from the assertion; checked through `gate_red_rounds` and no `gate red N rounds` reason (testability).
+- AC8: factory.md also states the state an escalated job is left in and the Composer requirement; CHANGELOG entry required; a cheap factory.md assertion added (risk, testability).
+- AC9: simulation list extended with real findings plus `not_run`, `passed: true` plus `not_run`, round 2 after a red round, one variant disqualified while another proceeds, all variants `not_run`, and the AC1 cases; the assertions apply to the escalating cases (scope, risk, testability).
+- AC10: variant escalation stage is `gate` (not `variants`), uses the same reason format with a `variant <n>:` prefix on the command.
+- Design: stale "open question" sentence replaced with D-003; a separate `not_run` variant list keeps the empty-`gated` case from falling into the `!gated.length` branch; gate prompt says a started command is never `not_run`.
+- Out of scope: T-005 added. shape.md: done-definition bullet removed from In scope and moved to Out of scope.
+- Risks: the "Open: none" line replaced by the four open questions, listed unanswered; Composer-requirement, mislabelled-`not_run` and variant-worktree risks added. Addendum rewritten to say the AC9 list is updated.
+
+Not changed, because they are open questions: compound/prefixed/`-d` command handling, how the helper is exposed to tests, the exact quoting and idempotence rule (so AC2's exact input/output table is still missing), and the result when all variants are `not_run` and asks are pending (no simulation for that combination). Variant worktree cleanup is left undecided.

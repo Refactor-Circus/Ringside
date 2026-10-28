@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RefactorCircus\Ringside\Specs;
 
 use RefactorCircus\Ringside\Project;
+use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -14,6 +15,9 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class Board
 {
+    /** The status of a spec whose meta.yml is not valid YAML. */
+    public const string UNREADABLE = 'unreadable';
+
     /** Board columns, in order, and the statuses each holds. */
     public const array COLUMNS = [
         'Ticket' => ['ticketed'],
@@ -107,9 +111,17 @@ final class Board
      */
     private function spec(Project $project, string $dir): array
     {
-        $meta = Yaml::parse((string) $project->read($dir.'/meta.yml')) ?? [];
+        // A meta.yml a session broke must not take the whole board down: the spec reads as unreadable, with why.
+        try {
+            $meta = Yaml::parse((string) $project->read($dir.'/meta.yml')) ?? [];
+            $metaError = null;
+        } catch (ParseException $e) {
+            $meta = [];
+            $metaError = $e->getMessage();
+        }
+
         $meta = is_array($meta) ? $meta : [];
-        $status = is_string($meta['status'] ?? null) ? $meta['status'] : 'unknown';
+        $status = $metaError !== null ? self::UNREADABLE : (is_string($meta['status'] ?? null) ? $meta['status'] : 'unknown');
         $groups = (new TaskParser)->groups((string) $project->read($dir.'/tasks.md'));
         $tasks = array_merge(...array_map(static fn (array $group): array => $group['tasks'], $groups ?: [['tasks' => []]]));
         $rounds = $this->rounds($project, $dir);
@@ -122,6 +134,7 @@ final class Board
             'dir' => $dir,
             'title' => is_string($meta['title'] ?? null) ? $meta['title'] : basename($dir),
             'status' => $status,
+            'meta_error' => $metaError,
             'column' => self::column($status),
             'ticket' => is_array($meta['ticket'] ?? null) ? $meta['ticket'] : null,
             // A bare URL is how a session sometimes writes it; read it as {url}.

@@ -49,3 +49,7 @@ Recovering a null result from the review-loop rework agents (today's behaviour s
 - D-003: criteria 3 and 8 are updated above. No `unfinished:` convention, no BUILT schema change.
 - D-004: the salvage is scoped to the group's `files` list. It runs `git -C <tree> status --porcelain -- <files>` and `git -C <tree> diff -- <files>`, commits only those paths, and so leaves other groups' uncommitted work in a shared tree alone. It skips the test run when the build skipped it (`testsInGroup` false). Criterion 2 is read with these two changes, and the simulation asserts the scoped paths and the skipped test step.
 - D-005: criterion 7 is dropped. Rework agents keep today's behaviour and rework recovery is out of scope. No open questions remain.
+
+## Addendum 2026-10-28 (D-009)
+
+`ringside check` does not apply to Ringside (tooling/verification-gate). The gate prompts in `resources/workflows/ring-master-factory.js` stop running it for the Ringside package, and a finding asking for `ringside sync` output on the job branch is dropped.

@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace RefactorCircus\Ringside\Specs;
 
 use RefactorCircus\Ringside\Project;
+use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 final class SpecRepository
 {
-    public const array STATUSES = ['ticketed', 'shaping', 'written', 'approved', 'building', 'needs-decision', 'escalated', 'in-review', 'merged', 'closed', 'in-progress', 'done', 'imported'];
+    public const array STATUSES = ['unreadable', 'ticketed', 'shaping', 'written', 'approved', 'building', 'needs-decision', 'escalated', 'in-review', 'merged', 'closed', 'in-progress', 'done', 'imported'];
 
     public function dir(Project $project): string
     {
@@ -26,7 +27,12 @@ final class SpecRepository
         foreach (glob($project->path($this->dir($project)).'/*', GLOB_ONLYDIR) ?: [] as $folder) {
             $id = basename($folder);
             $metaFile = $folder.'/meta.yml';
-            $meta = is_file($metaFile) ? Yaml::parseFile($metaFile) : [];
+
+            try {
+                $meta = is_file($metaFile) ? Yaml::parseFile($metaFile) : [];
+            } catch (ParseException) {
+                $meta = ['status' => Board::UNREADABLE];
+            }
             $meta = is_array($meta) ? $meta : [];
             $tasks = is_file($folder.'/tasks.md') ? (string) file_get_contents($folder.'/tasks.md') : '';
 

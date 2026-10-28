@@ -63,3 +63,43 @@
 - Rationale: none given (answered in RingMaster)
 - Raised by: build
 - Date: 2026-10-28
+
+## D-009
+
+- Question: The Windows CI fix (src/Worktree.php and tests/Feature/ImpactTest.php, commit 0a99916) is outside this spec's scope, which says no PHP changes are intended. Should it stay in this job or move to a job of its own?
+- Choice: Keep the Windows CI fix in this job and accept the scope change (record it in decisions.md)
+- Rationale: none given (answered in RingMaster)
+- Raised by: build
+- Date: 2026-10-28
+
+## D-010
+
+- Question: Amend project standard tooling/verification-gate: every gate command through composer --working-dir, ringside check only when check_applies on a synced worktree, gate stops needs-decision on out-of-scope files, PR body lists CI-only coverage?
+- Choice: Accept as proposed
+- Rationale: none given (answered in RingMaster)
+- Raised by: post-mortem
+- Date: 2026-10-28
+
+## D-011
+
+- Question: Amend project standard testing/ci-portability: one normalizer for git vs PHP paths, split output on \R, realpath over the whole path, PR names skipOnWindows gaps?
+- Choice: Accept as proposed
+- Rationale: none given (answered in RingMaster)
+- Raised by: post-mortem
+- Date: 2026-10-28
+
+## D-012
+
+- Question: Add project standard workflow/spec-readiness: main clean and green on every CI entry before approval, open questions settled into criteria text, agent/script split decisions carried into every criterion?
+- Choice: Accept as proposed
+- Rationale: none given (answered in RingMaster)
+- Raised by: post-mortem
+- Date: 2026-10-28
+
+## D-013
+
+- Question: Add project standard tooling/impact-check: report consumer failures caused by the consumer's own setup as environmental, separate from broken consumers?
+- Choice: Accept as proposed
+- Rationale: none given (answered in RingMaster)
+- Raised by: post-mortem
+- Date: 2026-10-28

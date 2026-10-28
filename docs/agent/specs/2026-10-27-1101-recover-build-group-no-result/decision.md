@@ -1,19 +1,15 @@
 # Decision
 
-Status: needs-decision at build (run wf_d373ca28-4c8, 2026-10-27).
+Status: approved at decide, round 1 (run wf_a8898960-1bf, 2026-10-28).
 
 ## Reasons
 
-- Group 1 (turn budget) built: tasks 1.1–1.4 done, committed as f94609b on `ring-master/2026-10-27-1101-recover-build-group-no-result--g1`. Its changed tests passed (35 tests, 121 assertions) and pint is clean. Task 1.5 (the full suite) is left for the gate. One deviation: it also changed `tests/Feature/SyncTest.php` (`maxTurns: 40` → `80`), which is outside the group's file list, because raising the default broke that assertion.
-- Group 2 (salvage and retry) was blocked before any code change. The job branch was cut from main at 88d5f36, which has none of the code criteria 3 and 6 target (replay mode, `buildVariant`, `finish()`, the integrate step, group worktrees). That code exists only as uncommitted edits in the main checkout (24 files). The spec's precondition, "the build must start from a clean main", was not met.
+- Gate green; only nits left. Group 3 (D-009) built: the gate no longer runs `ringside check` for Ringside. Round-1 gate: pest 175 passed, pint passing.
 
-## Open questions (questions.yml, source: build)
+## Breaks
 
-- **Q-007**: how group 2 should proceed when the base lacks the uncommitted factory code. Recommended: commit the in-progress main edits to main first as their own change, rebase the job branch onto that, then rerun group 2.
-- **Q-008**: where the `tasks.md` cross-check of the salvage agent's done ids comes from, given the script never reads files and BUILT can't change (D-003). Recommended: a small read-only agent call per salvaged group that returns the ticked ids.
-
-No precedents matched either question.
+- **Cortex**: `composer test:unit` fails against the job (exit 2). 655 of 656 tests passed. The one error, `KeenInCiTest` "it keeps refactor circus keen in require dev with a lock entry", is a `file_get_contents` of `composer.lock`, which the throwaway impact worktree lacks (tests/Feature/Compat/KeenInCiTest.php:89). The impact agent reads this as an environment problem, not a regression from this job.
 
 ## Nits
 
-None.
+None reported.
