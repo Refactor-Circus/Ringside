@@ -90,6 +90,8 @@ final class Job
                 'root' => $project->root,
             ],
             'replay' => $replay,
+            // Absolute folder of the workflow scripts this Ringside ships: the factory imports its helper modules from it (D-013).
+            'workflows_dir' => dirname(__DIR__, 2).'/resources/workflows',
             // How many times over the build runs, the judge keeping the best; 1 builds once.
             'variants' => $this->variants($project, $meta, $workspace->enabled()),
             'brief' => is_file($project->path($dir.'/brief.md')) ? $dir.'/brief.md' : null,

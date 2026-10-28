@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { run, baseArgs, clean, built, green } from './harness.mjs'
+import { cwdProof } from '../../resources/workflows/gate-command.js'
 
 // A clean preflight: nothing uncommitted, an origin remote, and ringside check applies.
 const preflightClean = { dirty: [], remote: true, check_applies: true }
@@ -148,8 +150,8 @@ test('the gate runs ringside check in the job worktree through composer, never b
   const args = baseArgs({ config: { build: { parallel: false, max_concurrency: 2, worktree: { mode: 'per-job', setup: 'auto' } } } })
   const { calls } = await run('ring-master-factory', args, responder())
   const prompt = calls.find(c => c.label === 'gate r1').prompt
-  assert.match(prompt, /`composer --working-dir=\/work\/pkg--import exec ringside check`/)
-  assert.doesNotMatch(prompt, /then `vendor\/bin\/ringside check`/)
+  assert.ok(prompt.includes("`composer --working-dir='/work/pkg--import' exec ringside check`"))
+  assert.doesNotMatch(prompt, /vendor\/bin\/ringside/)
 })
 
 const workspaceArgs = () => {
@@ -432,12 +434,12 @@ test('the gate of the Ringside package never runs ringside check; other packages
     const { result, calls } = await run('ring-master-factory', baseArgs({ job: ringsideJob(root) }), responder())
     assert.equal(result.status, 'approved', root)
     const prompt = calls.find(c => c.label === 'gate r1').prompt
-    assert.match(prompt, /Run the gate in \/work\/pkg--import: `composer test` and `vendor\/bin\/pint --test`\./, root)
+    assert.ok(prompt.includes(`Run the gate in /work/pkg--import: \`${cwdProof('/work/pkg--import', 'composer test')}\` and \`${cwdProof('/work/pkg--import', 'vendor/bin/pint --test')}\`.`), root)
     assert.doesNotMatch(prompt, /ringside check/, root)
   }
   for (const root of ['/work/pkg', '/work/Ringside-app', '/work/Keystone']) {
     const { calls } = await run('ring-master-factory', baseArgs({ job: ringsideJob(root) }), responder())
-    assert.match(calls.find(c => c.label === 'gate r1').prompt, /`composer --working-dir=\/work\/pkg--import exec ringside check`/, root)
+    assert.match(calls.find(c => c.label === 'gate r1').prompt, /`composer --working-dir='\/work\/pkg--import' exec ringside check`/, root)
   }
 })
 
@@ -449,9 +451,9 @@ test('the variant gates of the Ringside package never run ringside check; other 
     const prompt = ringside.calls.find(c => c.label === label).prompt
     assert.doesNotMatch(prompt, /ringside check/, label)
   }
-  assert.match(ringside.calls.find(c => c.label === 'gate v1').prompt, /run `composer test` and `vendor\/bin\/pint --test`\. Map every/)
+  assert.ok(ringside.calls.find(c => c.label === 'gate v1').prompt.includes(`run \`${cwdProof('/work/pkg--import--v1', 'composer test')}\` and \`${cwdProof('/work/pkg--import--v1', 'vendor/bin/pint --test')}\`. `))
   const other = await run('ring-master-factory', variantArgs(2), responder(variants))
-  assert.match(other.calls.find(c => c.label === 'gate v2').prompt, /`composer --working-dir=\/work\/pkg--import--v2 exec ringside check`/)
+  assert.match(other.calls.find(c => c.label === 'gate v2').prompt, /`composer --working-dir='\/work\/pkg--import--v2' exec ringside check`/)
 })
 
 // --- A build agent that returns no result: salvage, then one retry of what is left ---
@@ -903,8 +905,8 @@ test('check_applies false drops ringside check from both gate prompts and logs i
 
 test('a clean preflight keeps ringside check in both gate prompts', async () => {
   const { calls, logs } = await variantRun({ ready: true, worktree: '/work/pkg--import', ...preflightClean })
-  assert.match(calls.find(c => c.label === 'gate v1').prompt, /`composer --working-dir=\/work\/pkg--import--v1 exec ringside check`/)
-  assert.match(calls.find(c => c.label === 'gate r1').prompt, /`composer --working-dir=\/work\/pkg--import exec ringside check`/)
+  assert.match(calls.find(c => c.label === 'gate v1').prompt, /`composer --working-dir='\/work\/pkg--import--v1' exec ringside check`/)
+  assert.match(calls.find(c => c.label === 'gate r1').prompt, /`composer --working-dir='\/work\/pkg--import' exec ringside check`/)
   assert.ok(!logs.some(l => /dropped/.test(l)))
 })
 
@@ -928,4 +930,285 @@ test('a workspace job runs the preflight in each package folder and aggregates t
   const noRemote = await run('ring-master-factory', pr, responder({ '^prepare$': held({ remote: false, detail: 'Atrium has no origin remote' }) }))
   assert.deepEqual(noRemote.result.decisions.map(d => d.question), [REMOTE_ASK])
   assert.deepEqual(noRemote.calls.map(c => c.label), ['prepare'])
+})
+
+// cwd-proof gate commands (resources/workflows/gate-command.js, D-007, D-008, D-010, D-011).
+const tree = '/work/pkg--import'
+const wd = "--working-dir='/work/pkg--import'"
+
+test('cwdProof injects --working-dir into a composer script', () => {
+  assert.equal(cwdProof(tree, 'composer test'), `composer ${wd} test`)
+  assert.equal(cwdProof(tree, 'composer lint:check'), `composer ${wd} lint:check`)
+  assert.equal(cwdProof(tree, 'composer --no-interaction test:unit'), `composer ${wd} --no-interaction test:unit`)
+})
+
+test('cwdProof runs a vendor/bin binary through composer exec, passing its options after --', () => {
+  assert.equal(cwdProof(tree, 'vendor/bin/pest'), `composer ${wd} exec -- pest`)
+  assert.equal(cwdProof(tree, 'vendor/bin/pint --test'), `composer ${wd} exec -- pint --test`)
+  assert.equal(cwdProof(tree, 'vendor/bin/pest -d memory_limit=1G --filter=Gate'), `composer ${wd} exec -- pest -d memory_limit=1G --filter=Gate`)
+})
+
+test('cwdProof passes any other command through unchanged', () => {
+  for (const cmd of ['node --test tests/workflows/factory.test.mjs', 'npm test', './vendor/bin/pest', 'composer']) {
+    assert.equal(cwdProof(tree, cmd), cmd)
+  }
+  assert.equal(cwdProof(tree, undefined), undefined)
+  assert.equal(cwdProof(tree, ''), '')
+})
+
+test('cwdProof is idempotent: already-rewritten input comes back unchanged', () => {
+  const inputs = ['composer test', 'vendor/bin/pint --test', 'node --test a.test.mjs', 'composer analyse && vendor/bin/pest']
+  for (const cmd of inputs) {
+    const once = cwdProof(tree, cmd)
+    assert.equal(cwdProof(tree, once), once)
+    assert.equal(cwdProof('/some/other tree', once), once)
+  }
+  assert.equal(cwdProof(tree, 'composer --working-dir=/elsewhere test'), 'composer --working-dir=/elsewhere test')
+})
+
+test('cwdProof single-quotes the tree path, escaping quotes the POSIX way', () => {
+  assert.equal(cwdProof('/work/my pkg', 'composer test'), "composer --working-dir='/work/my pkg' test")
+  assert.equal(cwdProof("/work/it's here", 'vendor/bin/pest'), "composer --working-dir='/work/it'\\''s here' exec -- pest")
+  assert.equal(cwdProof('/work/"q" $HOME', 'composer test'), "composer --working-dir='/work/\"q\" $HOME' test")
+})
+
+test('cwdProof rewrites each &&, ; and | segment of a compound command by the same rule', () => {
+  assert.equal(
+    cwdProof(tree, 'composer lint:check && vendor/bin/pest; vendor/bin/phpstan analyse | tee out.txt'),
+    `composer ${wd} lint:check && composer ${wd} exec -- pest; composer ${wd} exec -- phpstan analyse | tee out.txt`,
+  )
+  assert.equal(cwdProof(tree, 'vendor/bin/pest || composer test'), `composer ${wd} exec -- pest || composer ${wd} test`)
+  // A separator inside quotes does not start a segment.
+  assert.equal(cwdProof(tree, 'node -e "a; vendor/bin/pest"'), 'node -e "a; vendor/bin/pest"')
+})
+
+test('cwdProof leaves an env-prefixed command unchanged', () => {
+  for (const cmd of ['XDEBUG_MODE=off composer test', 'APP_ENV=testing vendor/bin/pest']) {
+    assert.equal(cwdProof(tree, cmd), cmd)
+  }
+  assert.equal(cwdProof(tree, 'XDEBUG_MODE=off composer test && vendor/bin/pint --test'), `XDEBUG_MODE=off composer test && composer ${wd} exec -- pint --test`)
+})
+
+test('cwdProof leaves a composer command that already names a working dir unchanged', () => {
+  for (const cmd of ['composer -d /other test', 'composer -d/other test', 'composer --working-dir /other test', 'composer --working-dir=/other test']) {
+    assert.equal(cwdProof(tree, cmd), cmd)
+  }
+  for (const cmd of ['composer -d./rel test', 'composer -d../rel test', 'composer -d~/pkg test', "composer -d'/my pkg' test", 'composer -d"/my pkg" test', 'composer -dsub/pkg test', 'composer test -d /other']) {
+    assert.equal(cwdProof(tree, cmd), cmd)
+  }
+})
+
+test('cwdProof counts only -d or -d followed by a path as a working dir, and nothing after --', () => {
+  // An option that merely starts with -d is not a working dir.
+  assert.equal(cwdProof(tree, 'composer test -dev'), `composer ${wd} test -dev`)
+  assert.equal(cwdProof(tree, 'composer show -direct'), `composer ${wd} show -direct`)
+  // After a bare --, arguments belong to the script, not to Composer.
+  assert.equal(cwdProof(tree, 'composer test -- -d memory_limit=1G'), `composer ${wd} test -- -d memory_limit=1G`)
+  assert.equal(cwdProof(tree, 'composer test -- -d/tmp'), `composer ${wd} test -- -d/tmp`)
+  assert.equal(cwdProof(tree, 'composer test -- --working-dir /tmp'), `composer ${wd} test -- --working-dir /tmp`)
+})
+
+// --- not_run: commands the gate could not run (AC1, AC3, AC5, AC6, AC7, AC9, AC10) ---
+
+const binCommands = { test: 'vendor/bin/pest', verify: 'vendor/bin/pest', format_check: 'vendor/bin/pint --test' }
+const refused = (command = `composer ${wd} exec -- pest`, reason = 'runner refused: not in allowlist') => ({ command, reason })
+const unrunGate = (entries, extra = {}) => ({ passed: false, findings: [], changed_files: [], not_run: entries, ...extra })
+const redGate = { passed: false, findings: [{ severity: 'blocker', summary: '2 tests fail' }], changed_files: [] }
+
+// An escalation at stage gate: the escalating round ran no agent after its gate, so no rework, review or commit (AC5, AC6).
+function assertGateEscalation({ result, calls }, reasons, { round = 1, redRounds = 0 } = {}) {
+  assert.equal(result.status, 'escalated')
+  assert.equal(result.stage, 'gate')
+  assert.deepEqual(result.reasons, reasons)
+  assert.equal(result.gate_red_rounds, redRounds)
+  assert.ok(!result.reasons.some(r => /gate red \d+ rounds/.test(r)), 'no red-round reason')
+  assert.ok(!result.reasons.some(r => r.includes('undefined')), 'no undefined in reasons')
+  assert.ok(!calls.some(c => c.label === `rework r${round}`), 'no rework in the escalating round')
+  const lastGate = calls.map(c => c.label).findLastIndex(l => l.startsWith('gate'))
+  assert.deepEqual(calls.slice(lastGate + 1).map(c => c.label), [], 'no agent (rework, review, commit) after the escalating gate')
+  assert.ok(!calls.some(c => /^(adopt|integrate|brief)/.test(c.label)), 'nothing commits or briefs')
+}
+
+test('a gate that could not run a command escalates at stage gate in round 1, with no rework and no red round (9a)', async () => {
+  const r = await run('ring-master-factory', baseArgs(), responder({ '^gate r1$': unrunGate([refused()]) }))
+  assertGateEscalation(r, [`gate could not run: composer ${wd} exec -- pest: runner refused: not in allowlist`])
+  assert.equal(r.result.round, 1)
+  assert.ok(!r.calls.some(c => /^(code|security) r1$/.test(c.label)), 'no reviewer runs')
+})
+
+test('a workspace package that could not run a command escalates the job, its package name in the reason (9b)', async () => {
+  const r = await run('ring-master-factory', workspaceArgs(), responder({ '^gate Atrium r1$': unrunGate([refused('composer --working-dir=/tmp/t exec pest')]) }))
+  assertGateEscalation(r, ['gate could not run: Atrium: composer --working-dir=/tmp/t exec pest: runner refused: not in allowlist'])
+})
+
+test('workspace not_run reasons keep package order, one per entry, the reason verbatim after the second colon', async () => {
+  const r = await run('ring-master-factory', workspaceArgs(), responder({
+    '^gate Keystone r1$': unrunGate([refused('composer test', 'refused: rule 3: no composer')]),
+    '^gate Atrium r1$': unrunGate([refused('composer analyse', 'one'), refused('composer lint:check', 'two')]),
+  }))
+  assertGateEscalation(r, [
+    'gate could not run: Keystone: composer test: refused: rule 3: no composer',
+    'gate could not run: Atrium: composer analyse: one',
+    'gate could not run: Atrium: composer lint:check: two',
+  ])
+})
+
+test('a gate that ran everything and failed still counts a red round and reworks (9c, AC7)', async () => {
+  let gates = 0
+  const { result, calls } = await run('ring-master-factory', baseArgs(), responder({ '^gate': () => (++gates === 1 ? redGate : green) }))
+  assert.equal(result.status, 'approved')
+  assert.equal(result.gate_red_rounds, 1)
+  assert.ok(calls.some(c => c.label === 'rework r1'))
+})
+
+test('an empty not_run never escalates: a red gate reworks, a green one passes (9d, AC7)', async () => {
+  let gates = 0
+  const red = await run('ring-master-factory', baseArgs(), responder({ '^gate': () => (++gates === 1 ? { ...redGate, not_run: [] } : { ...green, not_run: [] }) }))
+  assert.equal(red.result.status, 'approved')
+  assert.equal(red.result.gate_red_rounds, 1)
+  assert.ok(red.calls.some(c => c.label === 'rework r1'))
+  const clean = await run('ring-master-factory', baseArgs(), responder({ '^gate': { ...green, not_run: [] } }))
+  assert.equal(clean.result.status, 'approved')
+  assert.equal(clean.result.gate_red_rounds, 0)
+})
+
+test('real findings with a non-empty not_run escalate at stage gate: not_run wins and no rework runs (9e, D-004)', async () => {
+  const r = await run('ring-master-factory', baseArgs(), responder({ '^gate r1$': unrunGate([refused()], { findings: redGate.findings }) }))
+  assertGateEscalation(r, [`gate could not run: composer ${wd} exec -- pest: runner refused: not in allowlist`])
+})
+
+test('passed: true with a non-empty not_run escalates like any other not_run (9f)', async () => {
+  const r = await run('ring-master-factory', baseArgs(), responder({ '^gate r1$': { ...green, not_run: [refused()] } }))
+  assertGateEscalation(r, [`gate could not run: composer ${wd} exec -- pest: runner refused: not in allowlist`])
+  assert.ok(!r.calls.some(c => /^(code|security) r1$/.test(c.label)), 'no reviewer runs')
+})
+
+test('not_run in round 2 after a red round escalates with gate_red_rounds left where it was (9g, AC6)', async () => {
+  let gates = 0
+  const r = await run('ring-master-factory', baseArgs(), responder({ '^gate': () => (++gates === 1 ? redGate : unrunGate([refused()])) }))
+  assertGateEscalation(r, [`gate could not run: composer ${wd} exec -- pest: runner refused: not in allowlist`], { round: 2, redRounds: 1 })
+  assert.equal(r.result.round, 2)
+  assert.deepEqual(r.calls.filter(c => c.label.startsWith('rework')).map(c => c.label), ['rework r1'], 'only the red round reworked')
+})
+
+test('a variant whose gate could not run is disqualified; the other proceeds without a judge (9h, D-003)', async () => {
+  const { result, calls, logs } = await run('ring-master-factory', variantArgs(2), responder({
+    '^variant worktrees': { ready: true },
+    '^variant \\d$': built,
+    '^gate v1$': { ...gateFor(true), not_run: [refused('composer test')] },
+    '^gate v2$': gateFor(true),
+    '^adopt': { merged: true },
+  }))
+  assert.equal(result.status, 'approved')
+  assert.equal(result.variants_winner, 2)
+  assert.ok(!calls.some(c => c.label === 'judge'), 'one eligible variant: the judge is skipped')
+  assert.ok(calls.some(c => c.label === 'adopt v2'))
+  assert.ok(logs.some(l => /Variant 1 disqualified/.test(l)))
+})
+
+test('when every variant could not run a command, the job escalates at stage gate, never reaching the fallback or the judge (9i)', async () => {
+  const r = await run('ring-master-factory', variantArgs(2), responder({
+    '^variant worktrees': { ready: true },
+    '^variant \\d$': built,
+    '^gate v1$': { ...gateFor(true), not_run: [refused('composer test', 'refused one')] },
+    '^gate v2$': { ...gateFor(false), not_run: [refused('composer lint:check', 'refused: two')] },
+  }))
+  assertGateEscalation(r, ['gate could not run: variant 1: composer test: refused one', 'gate could not run: variant 2: composer lint:check: refused: two'])
+  assert.equal(r.result.variants_winner, null)
+  assert.ok(!r.calls.some(c => c.label === 'judge'))
+})
+
+test('no eligible variant with pending asks still escalates at stage gate, reasons first, the asks carried (9i, D-009)', async () => {
+  const ask = { question: 'One row per file or per line?', options: ['file', 'line'], recommendation: 'file' }
+  const r = await run('ring-master-factory', variantArgs(2), responder({
+    '^variant worktrees': { ready: true },
+    '^variant 1$': built,
+    '^variant 2$': { ...built, decisions: [ask] },
+    '^gate v1$': { ...gateFor(true), not_run: [refused('composer test', 'refused one')] },
+  }))
+  assertGateEscalation(r, ['gate could not run: variant 1: composer test: refused one'])
+  assert.deepEqual(r.result.decisions, [ask])
+  assert.ok(!r.calls.some(c => c.label === 'judge' || c.label === 'gate v2'))
+})
+
+test('a gate without not_run, with not_run: null, or a null gate behaves as before (9j, AC1)', async () => {
+  const without = await run('ring-master-factory', baseArgs(), responder())
+  assert.equal(without.result.status, 'approved')
+  assert.equal(without.result.gate_red_rounds, 0)
+
+  let gates = 0
+  const nulled = await run('ring-master-factory', baseArgs(), responder({ '^gate': () => (++gates === 1 ? { ...redGate, not_run: null } : { ...green, not_run: null }) }))
+  assert.equal(nulled.result.status, 'approved')
+  assert.equal(nulled.result.gate_red_rounds, 1)
+  assert.ok(nulled.calls.some(c => c.label === 'rework r1'))
+
+  let tries = 0
+  const dead = await run('ring-master-factory', baseArgs(), responder({ '^gate': () => (++tries === 1 ? null : green) }))
+  assert.equal(dead.result.status, 'approved')
+  assert.equal(dead.result.gate_red_rounds, 1, 'a null gate still counts red')
+  assert.match(dead.calls.find(c => c.label === 'rework r1').prompt, /gate agent failed/)
+
+  const deadPackage = await run('ring-master-factory', workspaceArgs(), responder({ '^gate Atrium r1$': null }))
+  assert.equal(deadPackage.result.status, 'approved')
+  assert.equal(deadPackage.result.gate_red_rounds, 1)
+})
+
+test('a malformed not_run entry is coerced: no undefined in the reasons, each reason cut to 500 characters (9j, AC1)', async () => {
+  const r = await run('ring-master-factory', baseArgs(), responder({
+    '^gate r1$': unrunGate([{ reason: 42 }, { command: 'composer test' }, { command: 'composer analyse', reason: { code: 1 } }, { command: 'composer lint:check', reason: 'x'.repeat(600) }]),
+  }))
+  assertGateEscalation(r, [
+    'gate could not run: : 42',
+    'gate could not run: composer test: ',
+    'gate could not run: composer analyse: [object Object]',
+    `gate could not run: composer lint:check: ${'x'.repeat(500)}`,
+  ])
+})
+
+// AC3: every gate prompt names its checkout through composer and says when a command is not_run.
+function assertGatePrompt(prompt, gateTree) {
+  for (const phrase of ['composer --working-dir=', 'not_run', 'did not start', 'exact refusal text']) assert.ok(prompt.includes(phrase), `gate prompt has "${phrase}"`)
+  assert.ok(!prompt.includes('vendor/bin/'), 'no gate prompt runs vendor/bin/ by path')
+  assert.ok(prompt.includes(`composer --working-dir='${gateTree}' exec -- pest`), 'the configured vendor/bin/pest is rewritten')
+  assert.ok(prompt.includes(`composer --working-dir='${gateTree}' exec -- pint --test`), 'the format check is rewritten')
+  assert.match(prompt, /never not_run/)
+  const common = prompt.slice(0, prompt.indexOf('before you report a failure.'))
+  assert.ok(common.startsWith('You are working on the Ring Master job'))
+  assert.ok(!common.includes('vendor/bin/'), 'the shared common text has no vendor/bin/')
+}
+
+test('the single-package gate prompt rewrites a vendor/bin verify command and states the not_run rule (AC3)', async () => {
+  const { calls } = await run('ring-master-factory', baseArgs({ config: { commands: binCommands } }), responder())
+  const prompt = calls.find(c => c.label === 'gate r1').prompt
+  assertGatePrompt(prompt, '/work/pkg--import')
+  assert.ok(prompt.includes(`composer ${wd} exec ringside check`))
+})
+
+test('every workspace per-package gate prompt rewrites its vendor/bin verify command and states the not_run rule (AC3)', async () => {
+  const args = workspaceArgs()
+  for (const p of Object.values(args.workspace.packages)) p.commands = { ...binCommands }
+  const { calls } = await run('ring-master-factory', args, responder())
+  for (const p of ['Keystone', 'Atrium']) assertGatePrompt(calls.find(c => c.label === `gate ${p} r1`).prompt, `/work/pkg/.ring-master/jobs/2026-10-23-1430-import/${p}`)
+})
+
+test('every variant gate prompt rewrites its vendor/bin verify command and states the not_run rule (AC3)', async () => {
+  const { calls } = await run('ring-master-factory', variantArgs(2, { config: { commands: binCommands } }), responder({
+    '^variant worktrees': { ready: true },
+    '^variant \\d$': built,
+    '^gate v\\d$': gateFor(true),
+    '^judge$': { winner: 1, reasons: ['first'] },
+    '^adopt': { merged: true },
+  }))
+  for (const n of [1, 2]) {
+    const prompt = calls.find(c => c.label === `gate v${n}`).prompt
+    assertGatePrompt(prompt, `/work/pkg--import--v${n}`)
+    assert.ok(prompt.includes(`composer --working-dir='/work/pkg--import--v${n}' exec ringside check`))
+  }
+})
+
+// AC8: the factory skill tells whoever runs the factory about the not_run channel and its escalation.
+test('the factory skill documents the not_run channel and the gate could not run: reasons (AC8)', () => {
+  const skill = readFileSync(new URL('../../resources/skills/workflow/factory.md', import.meta.url), 'utf8')
+  assert.ok(skill.includes('not_run'), 'factory.md names the not_run channel')
+  assert.ok(skill.includes('gate could not run:'), 'factory.md names the gate could not run: reason prefix')
 })

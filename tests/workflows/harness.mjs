@@ -46,6 +46,8 @@ export function baseArgs(overrides = {}) {
     ...overrides.config,
   }
   return {
+    // Absolute folder of the shipped workflow scripts, as `ringside job --json` passes it (D-013).
+    workflows_dir: join(root, 'resources', 'workflows'),
     spec: { id: '2026-10-23-1430-import', dir: 'docs/agent/specs/2026-10-23-1430-import', title: 'Import', standards: [] },
     job: { branch: 'ring-master/2026-10-23-1430-import', worktree: '../pkg--2026-10-23-1430-import', root: '/work/pkg' },
     waves: [[{ n: 1, name: 'Data', files: ['src/A.php'], criteria: [1], tasks: [{ id: '1.1', text: 'tests', done: false }] }]],

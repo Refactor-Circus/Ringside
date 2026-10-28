@@ -27,7 +27,9 @@ it('builds the workflow args for a spec from its files and the config', function
         ->and($job['decisions'][0])->toMatchArray(['id' => 'D-001', 'question' => 'Sync or queued?', 'choice' => 'queued'])
         ->and($job['index']['testing/pest-style']['kind'])->toBe('architectural')
         ->and(array_column($job['reviewers'], 'model', 'name'))->toBe(['code' => 'sonnet', 'compat' => 'opus'])
-        ->and($job['config']['review']['rounds']['max'])->toBe(3);
+        ->and($job['config']['review']['rounds']['max'])->toBe(3)
+        ->and($job['workflows_dir'])->toBe(dirname(__DIR__, 2).'/resources/workflows')
+        ->and(is_file($job['workflows_dir'].'/gate-command.js'))->toBeTrue();
 });
 
 it('says which spec it could not find', function () {

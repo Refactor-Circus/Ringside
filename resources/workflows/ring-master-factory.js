@@ -21,7 +21,15 @@ export const meta = {
 // The script never reads files; agents do, and each writes its own report.
 // ---------------------------------------------------------------------------
 
-const { spec, job, waves, decisions = [], index = {}, reviewers = [], config, workspace = null, impact = { enabled: false, consumers: [] }, replay = false, replay_from = null } = args
+const { spec, job, waves, decisions = [], index = {}, reviewers = [], config, workspace = null, impact = { enabled: false, consumers: [] }, replay = false, replay_from = null, workflows_dir = null } = args
+// The cwd-proof gate command helper ships beside this script (D-010). The script has no
+// path of its own, so `ringside job --json` passes the folder as workflows_dir (D-013).
+if (!workflows_dir) throw new Error('args.workflows_dir is missing: build the args with `vendor/bin/ringside job <spec> --json` from this Ringside version.')
+const fileUrl = path => {
+  const p = String(path).replace(/\\/g, '/')
+  return `file://${p.startsWith('/') ? '' : '/'}${encodeURI(p).replace(/[?#]/g, encodeURIComponent)}`
+}
+const { cwdProof } = await import(fileUrl(`${workflows_dir}/gate-command.js`))
 const SEVERITIES = ['architectural', 'blocker', 'major', 'minor', 'nit']
 const review = config.review
 const specDir = `${job.root}/${spec.dir}`
@@ -90,6 +98,8 @@ const GATE = {
     findings: { type: 'array', items: FINDING },
     changed_files: { type: 'array', items: { type: 'string' } },
     criteria: { type: 'array', items: { type: 'object', properties: { n: { type: 'number' }, proven: { type: 'boolean' }, proof: { type: 'string' } } } },
+    // Commands the gate could not run (refused by the runner, or run in the wrong checkout); never one that ran and failed.
+    not_run: { type: 'array', items: { type: 'object', required: ['command', 'reason'], properties: { command: { type: 'string' }, reason: { type: 'string' } } } },
   },
 }
 const INTEGRATED = {
@@ -168,6 +178,13 @@ function classify(gate, reviews) {
   return { findings: unique, decisions: open }
 }
 
+// A gate's not_run entries, coerced so an older, mocked or malformed result never throws or prints `undefined` (AC1).
+const notRun = gate => {
+  const list = gate && gate.not_run
+  return (Array.isArray(list) ? list : []).map(n => ({ command: String((n && n.command) ?? ''), reason: String((n && n.reason) ?? '').slice(0, 500) }))
+}
+const couldNotRun = (n, prefix = '') => `gate could not run: ${prefix}${n.command}: ${n.reason}`
+
 // Every ringside call outside the gate and impact check runs from the main checkout through composer, so it works whatever the session's cwd is.
 const ringside = command => `composer --working-dir=${job.root} exec ringside -- ${command}`
 const noCd = 'Run each ringside command exactly as written, from whatever folder you are in: never `cd` into the worktree first.'
@@ -212,6 +229,8 @@ Code changes happen in the job worktree; reports go in the spec folder of the ma
 Read ${specDir}/spec.md and ${specDir}/decisions.md (if present) first. Decisions there are final: never re-raise them.
 Standards that apply: ${spec.standards.length ? spec.standards.map(p => `${job.root}/${p}`).join(', ') : 'see ' + specDir + '/standards.md'}.
 Shell: one command per Bash call, with no \`&&\`, \`;\` or pipes. A session started by RingMaster's runner only runs the commands it allows, and a compound command is refused as a whole. To work in another folder, run \`cd <folder>\` as its own call first, or use \`git -C <folder>\` and \`composer --working-dir=<folder>\`. Read files with the Read tool, not cat. If a command is refused, split it up and try again before you report a failure.`
+// Every gate prompt (AC3): a command goes in not_run only when it did not start, never when it ran and failed.
+const notRunRule = `Run each gate command exactly as written: it names its checkout itself, so it works from any folder. Never run a project binary by its path. Report a command in not_run only when it did not start (the runner refused it, or it ran in the wrong checkout): command is the command as written here, reason is the exact refusal text. A command that started and then failed is never not_run: it is a blocker finding.`
 
 // --- Recovery ----------------------------------------------------------------
 // A build agent that ends without its result (out of turns, an API error, a timeout, a killed process) gets one salvage
@@ -381,7 +400,7 @@ Write the tests first, then the code, and run \`${config.commands.test}\` in ${v
 If a task needs a choice the spec and decisions don't settle, stop at a safe point and return it in decisions with options and your recommendation instead of choosing.`, o)
   }
   const gateVariant = n => agent(`${common}
-Gate variant ${n} in ${vTree(n)}: run \`${config.commands.verify}\`${config.commands.format_check ? ` and \`${config.commands.format_check}\`` : ''}${gateCheck && ringsideCheck ? `, then \`composer --working-dir=${vTree(n)} exec ringside check\`` : ''}. Map every numbered acceptance criterion in spec.md to the test that proves it. Every failure is a blocker finding. List changed_files (git -C ${vTree(n)} diff --name-only ${config.host.base}...${vBranch(n)}).
+Gate variant ${n} in ${vTree(n)}: run \`${cwdProof(vTree(n), config.commands.verify)}\`${config.commands.format_check ? ` and \`${cwdProof(vTree(n), config.commands.format_check)}\`` : ''}${gateCheck && ringsideCheck ? `, then \`${cwdProof(vTree(n), 'composer exec ringside check')}\`` : ''}. ${notRunRule} Map every numbered acceptance criterion in spec.md to the test that proves it. Every failure is a blocker finding. List changed_files (git -C ${vTree(n)} diff --name-only ${config.host.base}...${vBranch(n)}).
 Write ${outDir}/variants/v${n}-gate.md starting with "VERDICT: PASS" or "VERDICT: CHANGES".`, opts('gate', { phase: 'Variants', label: `gate v${n}`, schema: GATE }))
   const salvageVariant = n => `${common}
 Salvage variant ${n} of this job in its worktree ${vTree(n)}. Its build agent ended without returning a result (out of turns, an API error, a timeout or a killed process), so its work may be half done and uncommitted.
@@ -400,8 +419,15 @@ Return done with the ids of the finished tasks only. Do not use blocked for unfi
   })
   const done = results.filter(r => r && r.built && !r.built.blocked)
   const asks = done.flatMap(r => r.built.decisions || []).filter(a => !decidedQuestions.has(a.question.trim().toLowerCase()))
-  const gated = done.filter(r => r.gate)
+  // D-003: a variant whose gate could not run a command is disqualified; the others go on.
+  const disqualified = done.filter(r => r.gate && notRun(r.gate).length)
+  for (const r of disqualified) log(`Variant ${r.n} disqualified: its gate could not run ${notRun(r.gate).map(n => n.command).join(', ')}.`)
+  const gated = done.filter(r => r.gate && !notRun(r.gate).length)
   if (!gated.length) {
+    // No variant is eligible because gates could not run: stage gate, those reasons first, pending asks carried (D-009).
+    if (disqualified.length) {
+      return finish({ status: 'escalated', stage: 'gate', reasons: disqualified.flatMap(r => notRun(r.gate).map(n => couldNotRun(n, `variant ${r.n}: `))), ...(asks.length ? { decisions: asks } : {}) })
+    }
     if (asks.length) return finish({ status: 'needs-decision', stage: 'build', decisions: asks })
     return finish({ status: 'escalated', stage: 'variants', reasons: ['no variant built and gated'], variants: results.map(r => r && { n: r.n, blocked: r.built && r.built.blocked }) })
   }
@@ -509,7 +535,8 @@ for (let round = 1; round <= review.rounds.max; round++) {
 
   phase('Gate')
   const runGate = (pkg, file) => agent(`${common}
-Run the gate in ${treeFor(pkg)}: \`${command(pkg, 'verify')}\`${command(pkg, 'format_check') ? ` and \`${command(pkg, 'format_check')}\`` : ''}${workspace || !(gateCheck && ringsideCheck) ? '' : `, then \`composer --working-dir=${treeFor(pkg)} exec ringside check\` (never the ringside binary by path, which the runner refuses)`}.
+Run the gate in ${treeFor(pkg)}: \`${cwdProof(treeFor(pkg), command(pkg, 'verify'))}\`${command(pkg, 'format_check') ? ` and \`${cwdProof(treeFor(pkg), command(pkg, 'format_check'))}\`` : ''}${workspace || !(gateCheck && ringsideCheck) ? '' : `, then \`${cwdProof(treeFor(pkg), 'composer exec ringside check')}\` (through composer, never by path)`}.
+${notRunRule}
 ${review.gate.criteria_mapping ? `Map every numbered acceptance criterion in spec.md${workspace ? ` that ${pkg} proves` : ''} to the test (file and name) or code that proves it.` : ''}
 Every failure is a blocker finding with the failing output summarised${workspace ? `; report files as ${pkg}/<path>` : ''}. List changed_files (git diff --name-only ${config.host.base}...${job.branch}${workspace ? `, prefixed with ${pkg}/` : ''}).
 Write ${roundDir}/${file} starting with "VERDICT: PASS" or "VERDICT: CHANGES".`, opts('gate', { phase: 'Gate', label: workspace ? `gate ${pkg} r${round}` : `gate r${round}`, schema: GATE }, red > 0))
@@ -519,8 +546,14 @@ Write ${roundDir}/${file} starting with "VERDICT: PASS" or "VERDICT: CHANGES".`,
         findings: gates.flatMap(g => g.findings),
         changed_files: gates.flatMap(g => g.changed_files || []),
         criteria: gates.flatMap(g => g.criteria || []),
+        not_run: gates.flatMap((g, i) => notRun(g).map(n => ({ ...n, command: `${packages[i]}: ${n.command}` }))),
       })
     : await runGate(null, 'gate.md')
+
+  // A command the gate could not run leaves nothing to fix: escalate once, before the red and review
+  // branch, so red, redRounds, rework and commits stay untouched (D-004). A null gate still counts red below.
+  const unrun = gate ? notRun(gate) : []
+  if (unrun.length) return finish({ status: 'escalated', stage: 'gate', round, reasons: unrun.map(n => couldNotRun(n)) })
 
   let reviews = []
   if (gate && (gate.passed || !review.gate.run_first)) {
