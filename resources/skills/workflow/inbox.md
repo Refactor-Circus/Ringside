@@ -25,7 +25,7 @@ RingMaster's runner starts headless sessions with one of two arguments; follow i
 
 ## 1. Apply answers first
 
-Call `pending-answers`. For each spec it lists, in that spec's `project_path`:
+Call `pending-answers`. For each spec it lists, in that spec's `project_path` (its folder, `spec_path`, is in the job worktree while the job is open):
 
 - **decisions**: invoke the `ring-master-decide` skill for that spec (Skill tool) and give it these answers instead of asking: each becomes the next `D-xxx` entry (choice = `answer`, rationale = `note`, raised by = `source`, "answered in RingMaster"), comes out of `questions.yml`, and the stage named by its `source` runs again (step 6 there).
 - **escalations**: `Approve as is` → invoke `ring-master-approve` (the user accepted it in RingMaster; don't ask again). `Send back with a note` → invoke `ring-master-rework` with the note. `Rebuild with variants` → invoke `ring-master-rework` with `--variants` and the note, if any: the factory builds the job several ways at once and keeps the best.
