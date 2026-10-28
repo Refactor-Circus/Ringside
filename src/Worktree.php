@@ -25,6 +25,12 @@ final class Worktree
     /** @var list<string> */
     private const array INSTALL = ['composer', 'install', '--no-interaction'];
 
+    /** @var list<string> */
+    private const array UPDATE = ['composer', 'update', '--no-interaction'];
+
+    /** What Composer says when the lock no longer satisfies the manifest, as when the job branch moved a constraint. */
+    private const string STALE_LOCK = '/does not satisfy your constraint|is not present in the lock file|lock file .*out of date/i';
+
     /**
      * Creates the worktree at $path on $branch (a new branch from $base when
      * it does not exist yet), or reuses it when it is already on $branch.
@@ -240,10 +246,20 @@ final class Worktree
 
         $local = is_file($absolute.'/'.self::LOCAL_FILES[0]);
         // An empty COMPOSER reads as unset, so a caller's COMPOSER never picks the manifest.
-        [$code, $out] = Shell::run(self::INSTALL, $absolute, ['COMPOSER' => $local ? self::LOCAL_FILES[0] : ''], true);
-        $command = implode(' ', self::INSTALL);
+        $env = ['COMPOSER' => $local ? self::LOCAL_FILES[0] : ''];
+        $prefix = $local ? 'COMPOSER='.self::LOCAL_FILES[0].' ' : '';
+        [$code, $out] = Shell::run(self::INSTALL, $absolute, $env, true);
+        $ran = '`'.$prefix.implode(' ', self::INSTALL).'`';
 
-        return [$code, $out, $local ? '`COMPOSER='.self::LOCAL_FILES[0]." {$command}`" : "`{$command}`"];
+        // The job branch moved a constraint (pest ^5.3.4, say) past the lock it was given. That lock
+        // is the worktree's own and gitignored, so it is brought up to the manifest instead of failing.
+        if ($code !== 0 && preg_match(self::STALE_LOCK, $out) === 1) {
+            [$code, $updated] = Shell::run(self::UPDATE, $absolute, $env, true);
+            $out .= "\n".$updated;
+            $ran .= ', then `'.$prefix.implode(' ', self::UPDATE).'` (the lock no longer matched composer.json)';
+        }
+
+        return [$code, $out, $ran];
     }
 
     /**
