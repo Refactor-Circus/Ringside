@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use RefactorCircus\Ringside\Config;
+use RefactorCircus\Ringside\Render\Template;
 
 it('merges ring-master.yml over the defaults', function () {
     $config = fixtureProject(['ring-master.yml' => "build:\n  parallel: true\ntargets: [agents]\n"])->config;
@@ -33,6 +34,53 @@ it('rejects unknown keys, roles, severities and bad round limits', function () {
     $problems = implode("\n", fixtureProject(['ring-master.yml' => "colour: blue\nroles:\n  wizard: {}\nreview:\n  rework_threshold: huge\n  rounds: { max: 1, min: 2 }\n"])->config->validate());
 
     expect($problems)->toContain('unknown key `colour`', 'unknown role `wizard`', '`review.rework_threshold` must be', '`review.rounds` needs');
+});
+
+it('gives the implementer and reworker 80 turns by default', function () {
+    $config = fixtureProject()->config;
+
+    expect(Config::defaults()['roles']['implementer']['max_turns'])->toBe(80)
+        ->and(Config::defaults()['roles']['reworker']['max_turns'])->toBe(80)
+        ->and($config->role('implementer')['max_turns'])->toBe(80)
+        ->and($config->role('reworker')['max_turns'])->toBe(80);
+});
+
+it('keeps a max_turns the project set itself', function () {
+    $config = fixtureProject(['ring-master.yml' => "roles:\n  implementer: { max_turns: 40 }\n  reworker: { max_turns: 25 }\n"])->config;
+
+    expect($config->role('implementer')['max_turns'])->toBe(40)
+        ->and($config->role('reworker')['max_turns'])->toBe(25);
+});
+
+it('falls back to the default implementer max_turns when the role sets none', function () {
+    $project = fixtureProject(['ring-master.yml' => "roles:\n  implementer: { model: opus, max_turns: null }\n"]);
+
+    expect(Template::vars($project)['max_turns'])->toBe((string) Config::defaults()['roles']['implementer']['max_turns'])
+        ->and(Template::vars(fixtureProject())['max_turns'])->toBe('80');
+});
+
+it('shows the default max_turns in the README config example', function () {
+    $readme = (string) file_get_contents(dirname(__DIR__, 2).'/README.md');
+
+    foreach (['implementer', 'reworker'] as $role) {
+        expect(preg_match('/^\s+'.$role.':\s*\{[^}]*\bmax_turns:\s*(\d+)/m', $readme, $match))->toBe(1, "README has no {$role} example")
+            ->and((int) $match[1])->toBe(Config::defaults()['roles'][$role]['max_turns'])
+            ->and((int) $match[1])->toBe(80);
+    }
+
+    expect($readme)->toContain('A `max_turns` your `ring-master.yml` already sets, published from this example or overridden, stays as it is.');
+});
+
+it('tells the implementer to keep turns for committing and returning its result', function () {
+    $agent = (string) file_get_contents(Template::resources('agents/implementer.md'));
+
+    expect(preg_match('/^4\. (.+)$/m', $agent, $match))->toBe(1)
+        ->and($match[1])->toContain(
+            'Keep your last few turns for committing and returning your result.',
+            'commit what passes and return `done` for the finished tasks only',
+            'without using `blocked` for the rest',
+            'Never end without returning your result.',
+        );
 });
 
 it('accepts the defaults', function () {
