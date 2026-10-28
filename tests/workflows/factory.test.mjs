@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { run, baseArgs, clean, built, green } from './harness.mjs'
+import { cwdProof } from '../../resources/workflows/gate-command.js'
 
 // Default responder: workspace ready, builds clean, gate green, reviews clean.
 const responder = (overrides = {}) => (call, calls) => {
@@ -415,4 +416,67 @@ test('a workspace job ignores variants and builds once', async () => {
   const { calls, logs } = await run('ring-master-factory', args, responder())
   assert.ok(!calls.some(c => c.label.startsWith('variant')))
   assert.ok(logs.some(l => /only a single package with per-job worktrees builds variants/.test(l)))
+})
+
+// cwd-proof gate commands (resources/workflows/gate-command.js, D-007, D-008, D-010, D-011).
+const tree = '/work/pkg--import'
+const wd = "--working-dir='/work/pkg--import'"
+
+test('cwdProof injects --working-dir into a composer script', () => {
+  assert.equal(cwdProof(tree, 'composer test'), `composer ${wd} test`)
+  assert.equal(cwdProof(tree, 'composer lint:check'), `composer ${wd} lint:check`)
+  assert.equal(cwdProof(tree, 'composer --no-interaction test:unit'), `composer ${wd} --no-interaction test:unit`)
+})
+
+test('cwdProof runs a vendor/bin binary through composer exec, passing its options after --', () => {
+  assert.equal(cwdProof(tree, 'vendor/bin/pest'), `composer ${wd} exec -- pest`)
+  assert.equal(cwdProof(tree, 'vendor/bin/pint --test'), `composer ${wd} exec -- pint --test`)
+  assert.equal(cwdProof(tree, 'vendor/bin/pest -d memory_limit=1G --filter=Gate'), `composer ${wd} exec -- pest -d memory_limit=1G --filter=Gate`)
+})
+
+test('cwdProof passes any other command through unchanged', () => {
+  for (const cmd of ['node --test tests/workflows/factory.test.mjs', 'npm test', './vendor/bin/pest', 'composer']) {
+    assert.equal(cwdProof(tree, cmd), cmd)
+  }
+  assert.equal(cwdProof(tree, undefined), undefined)
+  assert.equal(cwdProof(tree, ''), '')
+})
+
+test('cwdProof is idempotent: already-rewritten input comes back unchanged', () => {
+  const inputs = ['composer test', 'vendor/bin/pint --test', 'node --test a.test.mjs', 'composer analyse && vendor/bin/pest']
+  for (const cmd of inputs) {
+    const once = cwdProof(tree, cmd)
+    assert.equal(cwdProof(tree, once), once)
+    assert.equal(cwdProof('/some/other tree', once), once)
+  }
+  assert.equal(cwdProof(tree, 'composer --working-dir=/elsewhere test'), 'composer --working-dir=/elsewhere test')
+})
+
+test('cwdProof single-quotes the tree path, escaping quotes the POSIX way', () => {
+  assert.equal(cwdProof('/work/my pkg', 'composer test'), "composer --working-dir='/work/my pkg' test")
+  assert.equal(cwdProof("/work/it's here", 'vendor/bin/pest'), "composer --working-dir='/work/it'\\''s here' exec -- pest")
+  assert.equal(cwdProof('/work/"q" $HOME', 'composer test'), "composer --working-dir='/work/\"q\" $HOME' test")
+})
+
+test('cwdProof rewrites each &&, ; and | segment of a compound command by the same rule', () => {
+  assert.equal(
+    cwdProof(tree, 'composer lint:check && vendor/bin/pest; vendor/bin/phpstan analyse | tee out.txt'),
+    `composer ${wd} lint:check && composer ${wd} exec -- pest; composer ${wd} exec -- phpstan analyse | tee out.txt`,
+  )
+  assert.equal(cwdProof(tree, 'vendor/bin/pest || composer test'), `composer ${wd} exec -- pest || composer ${wd} test`)
+  // A separator inside quotes does not start a segment.
+  assert.equal(cwdProof(tree, 'node -e "a; vendor/bin/pest"'), 'node -e "a; vendor/bin/pest"')
+})
+
+test('cwdProof leaves an env-prefixed command unchanged', () => {
+  for (const cmd of ['XDEBUG_MODE=off composer test', 'APP_ENV=testing vendor/bin/pest']) {
+    assert.equal(cwdProof(tree, cmd), cmd)
+  }
+  assert.equal(cwdProof(tree, 'XDEBUG_MODE=off composer test && vendor/bin/pint --test'), `XDEBUG_MODE=off composer test && composer ${wd} exec -- pint --test`)
+})
+
+test('cwdProof leaves a composer command that already names a working dir unchanged', () => {
+  for (const cmd of ['composer -d /other test', 'composer -d/other test', 'composer --working-dir /other test', 'composer --working-dir=/other test']) {
+    assert.equal(cwdProof(tree, cmd), cmd)
+  }
 })
