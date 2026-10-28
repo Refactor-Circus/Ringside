@@ -246,6 +246,9 @@ const tree = workspace ? `${job.root}/${workspace.dir}` : ws.worktree || (worktr
 const treeFor = pkg => (workspace && pkg ? `${tree}/${pkg}` : tree)
 const command = (pkg, name) => (workspace && pkg ? workspace.packages[pkg].commands[name] : config.commands[name])
 const trees = workspace ? packages.map(p => `${p}: ${treeFor(p)}`).join('; ') : tree
+// ringside check does not apply to Ringside itself (D-009, tooling/verification-gate), so its gates leave it out.
+// The package is named after the job root's folder, as Job.php names it.
+const ringsideCheck = !/^ringside$/i.test(String(job.root).replace(/[\\/]+$/, '').split(/[\\/]/).pop())
 
 // --- Build -----------------------------------------------------------------
 
@@ -287,7 +290,7 @@ Write the tests first, then the code, and run \`${config.commands.test}\` in ${v
 If a task needs a choice the spec and decisions don't settle, stop at a safe point and return it in decisions with options and your recommendation instead of choosing.`, o)
   }
   const gateVariant = n => agent(`${common}
-Gate variant ${n} in ${vTree(n)}: run \`${config.commands.verify}\`${config.commands.format_check ? ` and \`${config.commands.format_check}\`` : ''}, then \`composer --working-dir=${vTree(n)} exec ringside check\`. Map every numbered acceptance criterion in spec.md to the test that proves it. Every failure is a blocker finding. List changed_files (git -C ${vTree(n)} diff --name-only ${config.host.base}...${vBranch(n)}).
+Gate variant ${n} in ${vTree(n)}: run \`${config.commands.verify}\`${config.commands.format_check ? ` and \`${config.commands.format_check}\`` : ''}${ringsideCheck ? `, then \`composer --working-dir=${vTree(n)} exec ringside check\`` : ''}. Map every numbered acceptance criterion in spec.md to the test that proves it. Every failure is a blocker finding. List changed_files (git -C ${vTree(n)} diff --name-only ${config.host.base}...${vBranch(n)}).
 Write ${outDir}/variants/v${n}-gate.md starting with "VERDICT: PASS" or "VERDICT: CHANGES".`, opts('gate', { phase: 'Variants', label: `gate v${n}`, schema: GATE }))
   const salvageVariant = n => `${common}
 Salvage variant ${n} of this job in its worktree ${vTree(n)}. Its build agent ended without returning a result (out of turns, an API error, a timeout or a killed process), so its work may be half done and uncommitted.
@@ -415,7 +418,7 @@ for (let round = 1; round <= review.rounds.max; round++) {
 
   phase('Gate')
   const runGate = (pkg, file) => agent(`${common}
-Run the gate in ${treeFor(pkg)}: \`${command(pkg, 'verify')}\`${command(pkg, 'format_check') ? ` and \`${command(pkg, 'format_check')}\`` : ''}${workspace ? '' : `, then \`composer --working-dir=${treeFor(pkg)} exec ringside check\` (not vendor/bin/ringside by path, which the runner refuses)`}.
+Run the gate in ${treeFor(pkg)}: \`${command(pkg, 'verify')}\`${command(pkg, 'format_check') ? ` and \`${command(pkg, 'format_check')}\`` : ''}${workspace || !ringsideCheck ? '' : `, then \`composer --working-dir=${treeFor(pkg)} exec ringside check\` (not vendor/bin/ringside by path, which the runner refuses)`}.
 ${review.gate.criteria_mapping ? `Map every numbered acceptance criterion in spec.md${workspace ? ` that ${pkg} proves` : ''} to the test (file and name) or code that proves it.` : ''}
 Every failure is a blocker finding with the failing output summarised${workspace ? `; report files as ${pkg}/<path>` : ''}. List changed_files (git diff --name-only ${config.host.base}...${job.branch}${workspace ? `, prefixed with ${pkg}/` : ''}).
 Write ${roundDir}/${file} starting with "VERDICT: PASS" or "VERDICT: CHANGES".`, opts('gate', { phase: 'Gate', label: workspace ? `gate ${pkg} r${round}` : `gate r${round}`, schema: GATE }, red > 0))

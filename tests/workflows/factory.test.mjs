@@ -419,6 +419,38 @@ test('a workspace job ignores variants and builds once', async () => {
   assert.ok(logs.some(l => /only a single package with per-job worktrees builds variants/.test(l)))
 })
 
+// --- ringside check stays out of Ringside's own gate (D-009, tooling/verification-gate) ---
+
+// The package is named after the job root's folder, as Job.php names it; a Windows root uses backslashes.
+const ringsideJob = root => ({ branch: 'ring-master/2026-10-23-1430-import', worktree: '../Ringside--2026-10-23-1430-import', root })
+
+test('the gate of the Ringside package never runs ringside check; other packages still do', async () => {
+  for (const root of ['/work/Ringside', 'C:\\work\\Ringside', '/work/ringside/']) {
+    const { result, calls } = await run('ring-master-factory', baseArgs({ job: ringsideJob(root) }), responder())
+    assert.equal(result.status, 'approved', root)
+    const prompt = calls.find(c => c.label === 'gate r1').prompt
+    assert.match(prompt, /Run the gate in \/work\/pkg--import: `composer test` and `vendor\/bin\/pint --test`\./, root)
+    assert.doesNotMatch(prompt, /ringside check/, root)
+  }
+  for (const root of ['/work/pkg', '/work/Ringside-app', '/work/Keystone']) {
+    const { calls } = await run('ring-master-factory', baseArgs({ job: ringsideJob(root) }), responder())
+    assert.match(calls.find(c => c.label === 'gate r1').prompt, /`composer --working-dir=\/work\/pkg--import exec ringside check`/, root)
+  }
+})
+
+test('the variant gates of the Ringside package never run ringside check; other packages still do', async () => {
+  const variants = { '^variant worktrees': { ready: true }, '^variant \\d$': vbuilt, '^gate v\\d$': gateFor(true), '^judge$': { winner: 1, reasons: ['first'] }, '^adopt': { merged: true } }
+  const ringside = await run('ring-master-factory', variantArgs(2, { job: ringsideJob('/work/Ringside') }), responder(variants))
+  assert.equal(ringside.result.status, 'approved')
+  for (const label of ['gate v1', 'gate v2', 'gate r1']) {
+    const prompt = ringside.calls.find(c => c.label === label).prompt
+    assert.doesNotMatch(prompt, /ringside check/, label)
+  }
+  assert.match(ringside.calls.find(c => c.label === 'gate v1').prompt, /run `composer test` and `vendor\/bin\/pint --test`\. Map every/)
+  const other = await run('ring-master-factory', variantArgs(2), responder(variants))
+  assert.match(other.calls.find(c => c.label === 'gate v2').prompt, /`composer --working-dir=\/work\/pkg--import--v2 exec ringside check`/)
+})
+
 // --- A build agent that returns no result: salvage, then one retry of what is left ---
 
 const recoverRoles = { implementer: { model: 'opus', effort: 'high' }, reworker: { model: 'sonnet', effort: 'medium' } }
