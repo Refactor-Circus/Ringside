@@ -45,10 +45,15 @@ final class SpecCommand extends Command
         $spec = (string) $input->getArgument('spec');
 
         try {
+            if ($action === 'commit') {
+                $output->writeln($this->commit($project, $spec, (string) $input->getArgument('message')));
+
+                return self::SUCCESS;
+            }
+
             $result = match ($action) {
                 'new' => $this->create($project, $spec, (string) $input->getOption('status')),
                 'path' => $this->where($project, $spec),
-                'commit' => $this->commit($project, $spec, (string) $input->getArgument('message')),
                 'reopen' => $this->reopen($project, $spec),
                 default => throw new RuntimeException("Unknown action `{$action}`; use one of ".implode(', ', self::ACTIONS).'.'),
             };
@@ -58,11 +63,7 @@ final class SpecCommand extends Command
             return self::FAILURE;
         }
 
-        $output->writeln(match (true) {
-            isset($result['done']) => $result['done'],
-            (bool) $input->getOption('json') => (string) json_encode($result, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR),
-            default => $result['path'],
-        });
+        $output->writeln($input->getOption('json') ? (string) json_encode($result, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) : $result['path']);
 
         return self::SUCCESS;
     }
@@ -129,23 +130,23 @@ final class SpecCommand extends Command
      * checkout that holds it. A spec still on the main checkout's base
      * branch is never committed there: other jobs build against it.
      *
-     * @return array{done: string}
+     * @return string what was done
      */
-    private function commit(Project $project, string $spec, string $message): array
+    private function commit(Project $project, string $spec, string $message): string
     {
         $where = $this->where($project, $spec);
         $checkout = $where['worktree'] ?? $project->root;
         $dir = Locator::relative($project).'/'.$where['id'];
 
         if ($where['worktree'] === null && $this->branch($project->root) === $project->config->string('host.base')) {
-            return ['done' => "{$where['id']} is on the main checkout, not in a job worktree; nothing committed."];
+            return "{$where['id']} is on the main checkout, not in a job worktree; nothing committed.";
         }
 
         Shell::run(['git', 'add', '--all', '--', $dir], $checkout);
         [$staged] = Shell::run(['git', 'diff', '--cached', '--quiet', '--', $dir], $checkout);
 
         if ($staged === 0) {
-            return ['done' => "Nothing new to commit for {$where['id']}."];
+            return "Nothing new to commit for {$where['id']}.";
         }
 
         $message = trim($message) === '' ? 'spec record' : trim($message);
@@ -155,7 +156,7 @@ final class SpecCommand extends Command
             throw new RuntimeException("Could not commit {$dir} in {$checkout}: {$out}");
         }
 
-        return ['done' => "Committed {$dir} on {$this->branch($checkout)}."];
+        return "Committed {$dir} on {$this->branch($checkout)}.";
     }
 
     /**
