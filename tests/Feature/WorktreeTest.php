@@ -43,6 +43,7 @@ function fakeComposer(): string
         #!/bin/sh
         printf '%s|%s|%s\\n' "\$(pwd -P)" "\$*" "\${COMPOSER:-<unset>}" >> '{$bin}/composer.log'
         echo 'fake composer stdout'
+        if [ -n "\${FAKE_COMPOSER_STALE_LOCK:-}" ] && [ "\$1" = install ]; then echo 'Required (in require-dev) package "pestphp/pest" is in the lock file as "v5.3.1" but that does not satisfy your constraint "^5.3.4".' >&2; exit 2; fi
         code="\${FAKE_COMPOSER_EXIT:-0}"
         if [ "\$code" != 0 ]; then echo 'fake composer stderr' >&2; fi
         exit "\$code"
@@ -256,6 +257,23 @@ describe('setup', function () {
         expect($runs)->toHaveCount(1)
             ->and($runs[0]['args'])->not->toContain('local:install');
     })->with(['with a local manifest' => true, 'without one' => false]);
+
+    it('updates the worktree\'s own lock when the job branch moved a constraint past it', function () {
+        writeFixture($this->project->root, 'composer.local.json', "{}\n");
+        writeFixture($this->project->root, 'composer.local.lock', "{}\n");
+        putenv('FAKE_COMPOSER_STALE_LOCK=1');
+
+        try {
+            [$code, $out, $ran] = Worktree::setup($this->project, $this->path, 'auto');
+        } finally {
+            putenv('FAKE_COMPOSER_STALE_LOCK');
+        }
+
+        expect($code)->toBe(0)
+            ->and($out)->toContain('does not satisfy your constraint')
+            ->and($ran)->toBe('`COMPOSER=composer.local.json composer install --no-interaction`, then `COMPOSER=composer.local.json composer update --no-interaction` (the lock no longer matched composer.json)')
+            ->and(array_column(composerRuns($this->bin), 'args'))->toBe(['install --no-interaction', 'update --no-interaction']);
+    });
 
     it('returns the failing exit code with the install\'s stderr', function () {
         putenv('FAKE_COMPOSER_EXIT=1');

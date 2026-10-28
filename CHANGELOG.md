@@ -2,6 +2,7 @@
 
 ## 0.10.0
 
+- `worktrees --setup` updates the worktree's own (gitignored) lock when `composer install` refuses it because the job branch moved a constraint past it, instead of failing Prepare on every relaunch.
 - Fixed: the factory script loaded `gate-command.js` with `import()`, which the Workflow tool refuses, so no factory build could start. `cwdProof` is inlined as an exact copy (a test keeps it identical), and a test fails if any workflow script imports. The inbox skill no longer says an unattended ticket waits for an answer.
 - Prepare's dirty check no longer stops a build for uncommitted files in other jobs' spec folders, which sessions write into the main checkout all the time; only files the job's task groups list count.
 - Unattended jobs create their ticket as drafted instead of stopping to ask whether to create it; a session with the user still shows the draft first.
