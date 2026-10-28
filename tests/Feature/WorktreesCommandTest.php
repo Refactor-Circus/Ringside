@@ -201,3 +201,65 @@ describe('a workspace', function () {
             ->and(file_exists("{$root}/{$dir}/Keystone/composer.local.json"))->toBeFalse();
     });
 })->skipOnWindows();
+
+describe('variants and replays', function () {
+    beforeEach(function () {
+        $this->project = worktreesPackage();
+        $this->path = worktreesPath($this->project);
+    });
+
+    it('makes a worktree per variant beside the job worktree, from the job branch, and removes them with their branches', function () {
+        [$code, $out] = ringsideWorktrees($this->project->root, $this->bin, ['demo', '--variants=2']);
+
+        expect($code)->toBe(0)
+            ->and($out)->toBe("{$this->path}--v1 on ".WORKTREES_BRANCH."--v1\n{$this->path}--v2 on ".WORKTREES_BRANCH.'--v2')
+            ->and(Shell::run(['git', 'branch', '--show-current'], $this->path.'--v2')[1])->toBe(WORKTREES_BRANCH.'--v2');
+
+        [$code, $out] = ringsideWorktrees($this->project->root, $this->bin, ['demo', '--remove-variants']);
+
+        expect($code)->toBe(0)
+            ->and($out)->toContain('Deleted branch '.WORKTREES_BRANCH.'--v1')
+            ->and(is_dir($this->path.'--v1'))->toBeFalse()
+            ->and(is_dir($this->path))->toBeTrue()
+            ->and(Shell::run(['git', 'branch', '--list', WORKTREES_BRANCH.'--v*'], $this->project->root)[1])->toBe('');
+    });
+
+    it('refuses a variant count outside 2 to 4', function (string $count) {
+        [$code, $out] = ringsideWorktrees($this->project->root, $this->bin, ['demo', "--variants={$count}"]);
+
+        expect($code)->toBe(1)->and($out)->toContain('--variants needs a number from 2 to 4');
+    })->with(['1', '5', 'many']);
+
+    it('replays on its own worktree and branch from the given commit, never the job\'s, and removes it', function () {
+        Shell::run(['git', 'commit', '-q', '--allow-empty', '-m', 'later'], $this->project->root);
+        [, $first] = Shell::run(['git', 'rev-parse', 'HEAD~1'], $this->project->root);
+
+        [$code, $out] = ringsideWorktrees($this->project->root, $this->bin, ['demo', '--replay', '--from='.$first]);
+
+        expect($code)->toBe(0)
+            ->and($out)->toBe("{$this->path}--replay on ".WORKTREES_BRANCH.'--replay')
+            ->and(Shell::run(['git', 'rev-parse', 'HEAD'], $this->path.'--replay')[1])->toBe($first)
+            ->and(is_dir($this->path))->toBeFalse();
+
+        ringsideWorktrees($this->project->root, $this->bin, ['demo', '--replay', '--variants=2']);
+        [$code, $out] = ringsideWorktrees($this->project->root, $this->bin, ['demo', '--remove-replay']);
+
+        expect($code)->toBe(0)
+            ->and(is_dir($this->path.'--replay'))->toBeFalse()
+            ->and(is_dir($this->path.'--replay--v1'))->toBeFalse()
+            ->and(Shell::run(['git', 'branch', '--list', WORKTREES_BRANCH.'--replay*'], $this->project->root)[1])->toBe('');
+    });
+
+    it('refuses variants and replays in a workspace', function () {
+        $root = fixtureProject([
+            'ring-master.yml' => "workspace:\n  packages: [Keystone]\n",
+            'docs/agent/specs/'.WORKTREES_SPEC.'/meta.yml' => 'id: '.WORKTREES_SPEC."\ntitle: Demo\nstatus: approved\n",
+            'docs/agent/specs/'.WORKTREES_SPEC.'/tasks.md' => "## Group 1: Contract\npackage: Keystone\n- [ ] 1.1 Contract\n",
+        ])->root;
+        packageRepo($root, 'Keystone');
+
+        [$code, $out] = ringsideWorktrees($root, $this->bin, ['demo', '--replay']);
+
+        expect($code)->toBe(1)->and($out)->toContain('a workspace job builds once');
+    });
+})->skipOnWindows();

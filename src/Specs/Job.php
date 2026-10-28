@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace RefactorCircus\Ringside\Specs;
 
+use RefactorCircus\Ringside\Impact;
 use RefactorCircus\Ringside\Project;
 use RefactorCircus\Ringside\Providers\ProviderRegistry;
 use RefactorCircus\Ringside\Standards\StandardsResolver;
 use RefactorCircus\Ringside\Workspace\Workspace;
+use RefactorCircus\Ringside\Worktree;
 use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -17,16 +19,32 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class Job
 {
+    /** Most variants a job may be built as at once. */
+    public const int MAX_VARIANTS = 4;
+
     /**
+     * $replay builds the job again from scratch on its own branch and
+     * worktree (`--replay`), every task group undone, so an evaluation can
+     * score a factory run without touching the real job.
+     *
      * @return array<string, mixed>
      */
-    public function build(Project $project, string $spec): array
+    public function build(Project $project, string $spec, bool $replay = false): array
     {
         $dir = $this->dir($project, $spec);
         $meta = Yaml::parse((string) $project->read($dir.'/meta.yml')) ?? [];
         $meta = is_array($meta) ? $meta : [];
         $parser = new TaskParser;
         $groups = $parser->groups((string) $project->read($dir.'/tasks.md'));
+
+        if ($replay) {
+            $groups = array_map(static fn (array $group): array => [
+                ...$group,
+                'done' => false,
+                'tasks' => array_map(static fn (array $task): array => [...$task, 'done' => false], $group['tasks']),
+            ], $groups);
+        }
+
         $waves = $parser->waves($groups);
         $resolution = (new StandardsResolver)->resolve($project);
         $providers = new ProviderRegistry($project);
@@ -44,6 +62,13 @@ final class Job
             }
         }
 
+        $described = $workspace->enabled() ? $workspace->describe($changed) : null;
+        $impact = Impact::consumers(
+            $project,
+            $described === null ? [Impact::name($project->root)] : array_values(array_map(static fn (array $p): string => $p['name'], $described)),
+            $described === null ? [] : array_keys($described),
+        );
+
         $index = [];
 
         foreach ($resolution->standards as $key => $standard) {
@@ -60,10 +85,14 @@ final class Job
                 'standards' => $this->standardPaths((string) $project->read($dir.'/standards.md'), $index),
             ],
             'job' => [
-                'branch' => 'ring-master/'.$id,
-                'worktree' => strtr($project->config->string('build.worktree.path'), ['{package}' => $package, '{spec}' => $id]),
+                'branch' => 'ring-master/'.$id.($replay ? Worktree::REPLAY : ''),
+                'worktree' => strtr($project->config->string('build.worktree.path'), ['{package}' => $package, '{spec}' => $id]).($replay ? Worktree::REPLAY : ''),
                 'root' => $project->root,
             ],
+            'replay' => $replay,
+            // How many times over the build runs, the judge keeping the best; 1 builds once.
+            'variants' => $this->variants($project, $meta, $workspace->enabled()),
+            'brief' => is_file($project->path($dir.'/brief.md')) ? $dir.'/brief.md' : null,
             'waves' => $waves,
             'warnings' => $parser->overlaps($waves),
             'decisions' => (new Decisions)->parse((string) $project->read($dir.'/decisions.md')),
@@ -71,11 +100,34 @@ final class Job
             'reviewers' => $project->config->reviewers(),
             'workspace' => $workspace->enabled() ? [
                 'dir' => $workspace->jobDir($id),
-                'packages' => $workspace->describe($changed),
+                'packages' => $described,
             ] : null,
+            // The impact gate: packages that require the changed ones, tested against the job before it approves.
+            'impact' => [
+                'enabled' => $project->config->bool('impact.enabled') && $impact !== [],
+                'consumers' => $impact,
+            ],
             'host' => $providers->host(),
             'config' => $project->config->values,
         ];
+    }
+
+    /**
+     * `variants:` in meta.yml, else `build.variants`, between 1 and
+     * MAX_VARIANTS. Only a single package with a worktree per job builds
+     * variants (each needs a worktree of its own); anything else builds once.
+     *
+     * @param  array<mixed>  $meta
+     */
+    private function variants(Project $project, array $meta, bool $workspace): int
+    {
+        if ($workspace || $project->config->string('build.worktree.mode') !== 'per-job') {
+            return 1;
+        }
+
+        $value = is_numeric($meta['variants'] ?? null) ? (int) $meta['variants'] : $project->config->int('build.variants');
+
+        return max(1, min(self::MAX_VARIANTS, $value));
     }
 
     public function dir(Project $project, string $spec): string

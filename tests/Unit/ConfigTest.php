@@ -68,3 +68,17 @@ it('fails loud on a non-string build.worktree.setup', function (string $value) {
     'number' => '5',
     'boolean' => 'true',
 ]);
+
+it('builds once by default, with judge, briefer and variant roles ready for more', function () {
+    $config = fixtureProject()->config;
+
+    expect($config->int('build.variants'))->toBe(1)
+        ->and($config->int('build.escalation_variants'))->toBe(3)
+        ->and($config->role('judge'))->toBe(['model' => 'opus', 'effort' => 'high'])
+        ->and($config->role('briefer'))->toBe(['model' => 'sonnet', 'effort' => 'low'])
+        ->and($config->role('variant')['models'])->toBe(['opus', 'opus', 'sonnet', 'opus']);
+});
+
+it('rejects a variant count outside 1 to 4', function (string $yaml) {
+    expect(implode("\n", fixtureProject(['ring-master.yml' => $yaml])->config->validate()))->toContain('must be a whole number from 1 to 4');
+})->with(["build:\n  variants: 5\n", "build:\n  variants: 0\n", "build:\n  escalation_variants: lots\n"]);

@@ -173,3 +173,23 @@ it('renders /ring-master-inbox everywhere, pointing at the RingMaster app once o
     expect((string) $project->read('.claude/skills/ring-master-inbox/SKILL.md'))->toContain('php /opt/ring-master/artisan mcp:start ring-master')
         ->and((string) $project->read(Sync::summaryPath($project)))->toContain("# ring-master-app: /opt/ring-master\n");
 });
+
+it('tells every skill that raises questions to check precedent first, and never to apply it', function () {
+    $project = fixtureProject();
+    (new Sync)->run($project);
+
+    foreach (['decide', 'spec-review', 'factory', 'inbox'] as $skill) {
+        expect((string) $project->read(".claude/skills/ring-master-{$skill}/SKILL.md"))
+            ->toContain('call `precedents` with each question', 'never apply a past answer yourself', 'Precedent: you chose <answer>')
+            ->not->toContain('{{');
+    }
+});
+
+it('renders the variant count a rebuild uses and the escalation option that asks for one', function () {
+    $project = withConfig(fixtureProject(), "build:\n  escalation_variants: 2\n");
+    (new Sync)->run($project, force: true);
+
+    expect((string) $project->read('.claude/skills/ring-master-rework/SKILL.md'))->toContain('set `variants: 2` in `meta.yml`')
+        ->and((string) $project->read('.claude/skills/ring-master-inbox/SKILL.md'))->toContain('`Rebuild with variants` → invoke `ring-master-rework` with `--variants`')
+        ->and((string) $project->read('.claude/skills/ring-master-factory/SKILL.md'))->toContain('--replay', 'replay.json', '`Risk: low|medium|high`');
+});

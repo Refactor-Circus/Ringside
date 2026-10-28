@@ -44,3 +44,42 @@ it('accepts the --json flag the skills use', function () {
     expect(proc_close($process))->toBe(0)
         ->and(json_decode($out, true)['spec']['id'])->toBe('2026-10-23-1430-import');
 });
+
+it('builds once by default, as many variants as meta.yml or build.variants ask (at most 4), and never in a workspace', function () {
+    $project = jobProject();
+    expect((new Job)->build($project, 'import')['variants'])->toBe(1);
+
+    $project = withConfig($project, "build:\n  variants: 3\n");
+    expect((new Job)->build($project, 'import')['variants'])->toBe(3);
+
+    writeFixture($project->root, 'docs/agent/specs/2026-10-23-1430-import/meta.yml', "id: 2026-10-23-1430-import\ntitle: Import\nstatus: approved\nvariants: 9\n");
+    expect((new Job)->build(reload($project), 'import')['variants'])->toBe(4);
+
+    $shared = withConfig($project, "build:\n  variants: 3\n  worktree: { mode: shared }\n");
+    writeFixture($project->root, 'docs/agent/specs/2026-10-23-1430-import/meta.yml', "id: 2026-10-23-1430-import\ntitle: Import\nstatus: approved\n");
+    expect((new Job)->build($shared, 'import')['variants'])->toBe(1);
+});
+
+it('replays a job on its own branch and worktree with every task group undone', function () {
+    $project = jobProject();
+    writeFixture($project->root, 'docs/agent/specs/2026-10-23-1430-import/tasks.md', "## Group 1: Data\n- [x] 1.1 Tests\n## Group 2: Command\ndepends on: 1\n- [ ] 2.1 Command\n");
+
+    $real = (new Job)->build(reload($project), 'import');
+    $replay = (new Job)->build(reload($project), 'import', replay: true);
+
+    expect(array_map(static fn (array $w): array => array_column($w, 'n'), $real['waves']))->toBe([[2]])
+        ->and($real['replay'])->toBeFalse()
+        ->and($replay['replay'])->toBeTrue()
+        ->and(array_map(static fn (array $w): array => array_column($w, 'n'), $replay['waves']))->toBe([[1], [2]])
+        ->and($replay['waves'][0][0]['tasks'][0]['done'])->toBeFalse()
+        ->and($replay['job']['branch'])->toBe('ring-master/2026-10-23-1430-import--replay')
+        ->and($replay['job']['worktree'])->toEndWith('--2026-10-23-1430-import--replay');
+});
+
+it('points at brief.md once the factory wrote one', function () {
+    $project = jobProject();
+    expect((new Job)->build($project, 'import')['brief'])->toBeNull();
+
+    writeFixture($project->root, 'docs/agent/specs/2026-10-23-1430-import/brief.md', "Risk: low\n");
+    expect((new Job)->build($project, 'import')['brief'])->toBe('docs/agent/specs/2026-10-23-1430-import/brief.md');
+});

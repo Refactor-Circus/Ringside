@@ -18,7 +18,7 @@ final readonly class Config
     public const array SEVERITIES = ['architectural', 'blocker', 'major', 'minor', 'nit'];
 
     /** @var list<string> */
-    public const array ROLES = ['orchestrator', 'ticketer', 'shaper', 'writer', 'planner', 'prepare', 'implementer', 'reworker', 'gate', 'reviewer', 'triage', 'approver', 'critic', 'analyst', 'discoverer'];
+    public const array ROLES = ['orchestrator', 'ticketer', 'shaper', 'writer', 'planner', 'prepare', 'implementer', 'integrator', 'reworker', 'gate', 'reviewer', 'triage', 'impact', 'variant', 'judge', 'briefer', 'approver', 'critic', 'analyst', 'discoverer'];
 
     /**
      * The role whose model each workflow skill runs on (frontmatter `model:`);
@@ -99,11 +99,18 @@ final readonly class Config
                 'writer' => ['model' => 'opus'],
                 'planner' => ['model' => 'opus'],
                 'prepare' => ['model' => 'haiku', 'effort' => 'low'],
+                // escalate_model: the model a role moves up to after a red gate or a repeated finding (null: never).
                 'implementer' => ['model' => 'opus', 'effort' => 'high', 'max_turns' => 40],
-                'reworker' => ['model' => 'opus', 'effort' => 'high', 'max_turns' => 40],
-                'gate' => ['model' => 'sonnet', 'effort' => 'low'],
+                'integrator' => ['model' => 'opus', 'effort' => 'high'],  // merges parallel group branches into the job branch
+                'reworker' => ['model' => 'opus', 'effort' => 'high', 'max_turns' => 40, 'escalate_model' => 'opus'],
+                'gate' => ['model' => 'sonnet', 'effort' => 'low', 'escalate_model' => 'opus'],
                 'reviewer' => ['model' => 'sonnet', 'effort' => 'medium'],
-                'triage' => ['model' => 'haiku', 'effort' => 'low', 'enabled' => false],
+                'triage' => ['model' => 'haiku', 'effort' => 'low', 'enabled' => true],
+                'impact' => ['model' => 'sonnet', 'effort' => 'low'],   // runs each consumer's tests against the job
+                // Variants: the implementer model of each variant in turn (v1, v2, ...); the judge picks the one to keep.
+                'variant' => ['models' => ['opus', 'opus', 'sonnet', 'opus']],
+                'judge' => ['model' => 'opus', 'effort' => 'high'],
+                'briefer' => ['model' => 'sonnet', 'effort' => 'low'],  // writes brief.md for the human reviewer before the PR
                 'approver' => ['model' => 'sonnet', 'enabled' => false],
                 'critic' => ['model' => 'sonnet', 'effort' => 'medium'],
                 'analyst' => ['model' => 'sonnet', 'effort' => 'medium'],
@@ -122,14 +129,22 @@ final readonly class Config
                 'fix_others_first' => true,
             ],
             'build' => [
-                'parallel' => false,
+                'parallel' => true,
                 'max_concurrency' => 2,
+                // Build the whole job this many times at once (up to 4, each in its own worktree) and keep the best; 1: once.
+                // A spec's meta.yml `variants:` wins. A single package with per-job worktrees only.
+                'variants' => 1,
+                'escalation_variants' => 3,           // used when you answer an escalation with "Rebuild with variants"
                 'worktree' => [
                     'mode' => 'per-job',
                     'path' => '../{package}--{spec}',
                     'setup' => 'auto',                // auto: install from composer.local.json when present, else composer install; any other string runs as is
                     'cleanup' => 'on_close',
                 ],
+            ],
+            'impact' => [
+                'enabled' => true,
+                'consumers' => 'auto',               // auto: sibling packages that require this one; a list of paths; off
             ],
             'discovery' => [
                 'enabled' => true,
@@ -330,6 +345,20 @@ final readonly class Config
 
         if (! in_array($this->string('stages.post_mortem'), ['on_merge', 'on_pr', 'manual', 'off'], true)) {
             $problems[] = 'ring-master.yml: `stages.post_mortem` must be on_merge, on_pr, manual or off.';
+        }
+
+        foreach (['build.variants', 'build.escalation_variants'] as $key) {
+            $value = $this->get($key);
+
+            if (! is_int($value) || $value < 1 || $value > 4) {
+                $problems[] = "ring-master.yml: `{$key}` must be a whole number from 1 to 4.";
+            }
+        }
+
+        $consumers = $this->get('impact.consumers');
+
+        if (! in_array($consumers, ['auto', 'off', false], true) && ! (is_array($consumers) && array_is_list($consumers))) {
+            $problems[] = 'ring-master.yml: `impact.consumers` must be auto, off or a list of package folders.';
         }
 
         $format = $this->nullableString('hooks.post_edit_format.command');

@@ -181,7 +181,7 @@ final class Board
     {
         $files = [];
 
-        foreach (['meta.yml', 'shape.md', 'spec.md', 'spec-review.md', 'decisions.md', 'standards.md', 'tasks.md', 'build.md', 'decision.md', 'questions.yml', 'verification.md', 'post-mortem.md', 'references.md'] as $name) {
+        foreach (['meta.yml', 'shape.md', 'spec.md', 'spec-review.md', 'decisions.md', 'standards.md', 'tasks.md', 'build.md', 'decision.md', 'questions.yml', 'verification.md', 'post-mortem.md', 'references.md', 'brief.md', 'variants.md'] as $name) {
             if ($project->exists($dir.'/'.$name)) {
                 $files[] = $dir.'/'.$name;
             }

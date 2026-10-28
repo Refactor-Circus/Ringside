@@ -1,0 +1,10 @@
+id: 2026-10-27-1059-prepare-cwd-proof-preflight
+title: Make Prepare cwd-proof and add a preflight
+status: approved
+review_passes: 2
+created: 2026-10-27
+ticket: { provider: file, key: T-002, url: docs/agent/tickets/T-002.md }
+standards:
+  refactor-circus/standards:
+    version: dev-main
+    reference: 2e6440f82ca5

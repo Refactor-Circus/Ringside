@@ -27,4 +27,10 @@ Architectural decisions belong to the user. Never answer them yourself.
   source: build                  # the stage to return to: ticket | shape | spec-review | approval | tasks | build
 ```
 
+Quote every value that holds `#`, `: `, a comma or brackets (`question: "Rebase PR #8 first?"`), and write options containing any of them as a block list (`options:` then one `- "..."` per line): in a `[...]` list ` #` starts a comment and a comma splits the option, and a file that does not parse shows in RingMaster only as an error.
+
+{{precedent}}
+
+Asking here, show a precedent the evidence names first, with its option marked recommended; the user still chooses.
+
 {{tracker_adapters}}

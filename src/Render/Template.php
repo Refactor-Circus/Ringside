@@ -118,6 +118,8 @@ final class Template
             'discovery_project_mode' => $config->string('discovery.project.mode'),
             'discovery_global_mode' => $config->string('discovery.global.mode'),
             'severity_rubric' => trim((string) file_get_contents(self::resources('fragments/severity.md'))),
+            'precedent' => trim((string) file_get_contents(self::resources('fragments/precedent.md'))),
+            'escalation_variants' => (string) max(2, min(4, $config->int('build.escalation_variants'))),
             'model_line' => '',
         ];
 
