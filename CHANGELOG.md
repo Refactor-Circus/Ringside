@@ -2,6 +2,7 @@
 
 ## 0.10.0
 
+- The managed Ring Master block in CLAUDE.md/AGENTS.md and the inbox skill say to keep a package's main checkout on its base branch: work that is not a factory job goes in a worktree of its own, since other packages' jobs build against the checkout.
 - Fixed: the factory script loaded `gate-command.js` with `import()`, which the Workflow tool refuses, so no factory build could start. `cwdProof` is inlined as an exact copy (a test keeps it identical), and a test fails if any workflow script imports. The inbox skill no longer says an unattended ticket waits for an answer.
 - Prepare's dirty check no longer stops a build for uncommitted files in other jobs' spec folders, which sessions write into the main checkout all the time; only files the job's task groups list count.
 - Unattended jobs create their ticket as drafted instead of stopping to ask whether to create it; a session with the user still shows the draft first.
