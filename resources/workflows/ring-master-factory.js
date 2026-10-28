@@ -195,7 +195,7 @@ function dirtyOverlap(lines) {
   return [...new Set(hits)]
 }
 
-const majorKeys = list =>list.filter(f => atLeast(f.severity, 'major')).map(findingKey).sort().join('\n')
+const majorKeys = list => list.filter(f => atLeast(f.severity, 'major')).map(findingKey).sort().join('\n')
 
 // The same major+ findings as the round before: one round short of noProgress.
 const repeated = (history, current) => history.length > 0 && majorKeys(current) !== '' && majorKeys(history[history.length - 1]) === majorKeys(current)
