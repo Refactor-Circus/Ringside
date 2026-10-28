@@ -582,8 +582,8 @@ test('the salvage prompt checks for locks, stays inside the group files, tests t
   assert.match(prompt, /merge or rebase in progress/)
   assert.match(prompt, /stop and return blocked/)
   assert.match(prompt, /never force/)
-  assert.ok(prompt.includes('`git -C /work/pkg--import status --porcelain -- src/A.php tests/ATest.php`'))
-  assert.ok(prompt.includes('`git -C /work/pkg--import diff -- src/A.php tests/ATest.php`'))
+  assert.ok(prompt.includes("`git -C /work/pkg--import status --porcelain -- 'src/A.php' 'tests/ATest.php'`"))
+  assert.ok(prompt.includes("`git -C /work/pkg--import diff -- 'src/A.php' 'tests/ATest.php'`"))
   assert.match(prompt, /1\.1 tests; 1\.2 code/, 'compares the changes with the group tasks')
   assert.ok(prompt.includes('`composer --working-dir=/work/pkg--import exec pest`'))
   assert.ok(prompt.includes('"2026-10-23-1430-import: group 1 Data (salvaged)"'))
@@ -603,8 +603,8 @@ test('a salvage in a parallel group worktree uses that tree and skips the test r
   }))
   assert.equal(result.status, 'approved')
   const prompt = calls.find(c => c.label === 'salvage g1').prompt
-  assert.ok(prompt.includes('`git -C /work/pkg--import--g1 status --porcelain -- src/A.php`'))
-  assert.ok(prompt.includes('`git -C /work/pkg--import--g1 diff -- src/A.php`'))
+  assert.ok(prompt.includes("`git -C /work/pkg--import--g1 status --porcelain -- 'src/A.php'`"))
+  assert.ok(prompt.includes("`git -C /work/pkg--import--g1 diff -- 'src/A.php'`"))
   assert.match(prompt, /on ring-master\/2026-10-23-1430-import--g1 with the message/)
   assert.match(prompt, /Do not run the test suite; the gate runs it after the build/)
   assert.doesNotMatch(prompt, /composer --working-dir=\/work/)
@@ -646,6 +646,22 @@ test('a variant that returns no result is salvaged in its own worktree and retri
   assert.equal(failed.result.status, 'escalated')
   assert.equal(failed.result.stage, 'variants')
   assert.deepEqual(labels(failed.calls).filter(l => l.startsWith('salvage')).sort(), ['salvage v1', 'salvage v2'])
+})
+
+test('a variant that returns a normal result is kept as it is, even with an empty done list: only a null one is recovered', async () => {
+  const { result, calls } = await run('ring-master-factory', variantArgs(2), responder({
+    '^variant worktrees': { ready: true },
+    '^variant \\d$': { ...built, done: [] },
+    '^gate v\\d$': gateFor(true),
+    '^judge$': { winner: 2, reasons: ['smaller diff'] },
+    '^adopt': { merged: true },
+  }))
+  assert.equal(result.status, 'approved')
+  assert.equal(result.variants_winner, 2)
+  assert.ok(!calls.some(c => /^salvage v\d$/.test(c.label)), 'no salvage for a variant that returned a result')
+  assert.ok(!calls.some(c => /^variant \d retry$/.test(c.label)), 'no retry for a variant that returned a result')
+  assert.ok(!calls.some(c => /^tasks v\d$/.test(c.label)))
+  assert.deepEqual(labels(calls).filter(l => /^gate v\d$/.test(l)).sort(), ['gate v1', 'gate v2'])
 })
 
 test('a rework that returns no result is still ignored, with no salvage', async () => {

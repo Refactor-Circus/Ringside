@@ -177,7 +177,7 @@ Shell: one command per Bash call, with no \`&&\`, \`;\` or pipes. A session star
 
 // --- Recovery ----------------------------------------------------------------
 // A build agent that ends without its result (out of turns, an API error, a timeout, a killed process) gets one salvage
-// of its uncommitted work and one retry of what is left. A result that leaves tasks undone gets the retry alone (D-003).
+// of its uncommitted work and one retry of what is left. A group result that leaves tasks undone gets the retry alone (D-003).
 
 const TICKED = { type: 'object', required: ['done'], properties: { done: { type: 'array', items: { type: 'string' } } } }
 const openAsks = r => ((r && r.decisions) || []).filter(a => !decidedQuestions.has(a.question.trim().toLowerCase()))
@@ -188,6 +188,8 @@ const testIn = (cmd, dir) => {
     : c.startsWith('vendor/bin/') ? `composer --working-dir=${dir} exec ${c.slice('vendor/bin/'.length)}` : null
   return run ? `Run the test command with \`${run}\`` : `Run the test command (\`cd ${dir}\` as its own call, then \`${c}\`)`
 }
+// A path single-quoted for a shell command line.
+const quoted = p => `'${String(p).replace(/'/g, `'\\''`)}'`
 const lockCheck = where => `Before touching anything, check for \`.git/index.lock\` (in a worktree \`git -C ${where} rev-parse --git-path index.lock\` gives its path) and for a merge or rebase in progress (\`git -C ${where} status\`). If you find one, stop and return blocked saying what you found: never force, never delete the lock, never abort the merge or rebase.`
 
 // The tasks still to do: the ids minus the validated done ids. Where tasks.md is ticked, a read-only agent reads it too (D-008),
@@ -205,11 +207,13 @@ Read ${specDir}/tasks.md and return in done the ids among ${ids.join(', ')} whos
   return left
 }
 
-// Returns the final result, or null when the salvage or the retry returned none.
-async function recover(label, result, salvagePrompt, retry, { ids = [], ticked = false, stage = 'Build' } = {}) {
+// Returns the final result, or null when the salvage or the retry returned none. retryUndone opts a caller whose agent
+// reports its finished task ids in done (a Build-loop group) into retrying a non-null result that leaves tasks undone;
+// without it only a null result is recovered.
+async function recover(label, result, salvagePrompt, retry, { ids = [], ticked = false, stage = 'Build', retryUndone = false } = {}) {
   let base = result
   if (result) {
-    if (result.blocked || openAsks(result).length) return result
+    if (!retryUndone || result.blocked || openAsks(result).length) return result
     if (ids.every(id => (result.done || []).includes(id))) return result
   } else {
     log(`${label}: the build agent returned no result; salvaging its work.`)
@@ -293,7 +297,8 @@ ${testIn(config.commands.test, vTree(n))} and keep only the work that passes.
 Commit what passes on ${vBranch(n)} with the message "${spec.id}: variant ${n} (salvaged)". Do not tick tasks.md; add a "## Variant ${n} (salvaged)" note to ${outDir}/variants/v${n}.md (what you found, what you committed, what is left).
 Return done with the ids of the finished tasks only. Do not use blocked for unfinished tasks: the workflow retries them.`
   const results = await pipeline(ns, async n => {
-    // Variants never tick tasks.md, so the salvage's own done ids are the only source.
+    // Variants never tick tasks.md, so the salvage's own done ids are the only source. A variant's own result does not
+    // list its finished ids, so only a null one is recovered (no retryUndone).
     const b = await recover(`v${n}`, await buildVariant(n), salvageVariant(n), ids => buildVariant(n, ids), { ids: pending.map(t => t.id), stage: 'Variants' })
     if (!b || b.blocked) return { n, built: b, gate: null }
     if (b.decisions && b.decisions.length) return { n, built: b, gate: null }
@@ -349,7 +354,7 @@ If a task needs a choice the spec and decisions don't settle (a public contract,
   // Scoped to the group's files (D-004): other groups of the wave may have uncommitted work in the same tree.
   const salvageGroup = group => {
     const where = whereOf(group)
-    const scope = group.files.length ? ` -- ${group.files.join(' ')}` : ''
+    const scope = group.files.length ? ` -- ${group.files.map(quoted).join(' ')}` : ''
     return `${common}
 Salvage task group ${group.n}: "${group.name}" in ${where}. Its build agent ended without returning a result (out of turns, an API error, a timeout or a killed process), so its work may be half done and uncommitted.
 ${lockCheck(where)}
@@ -358,7 +363,7 @@ ${testsInGroup ? `${testIn(command(group.package, 'test'), where)} and keep only
 Commit ${testsInGroup ? 'what passes' : 'the finished work'}${scope ? ', only those paths,' : ''} on ${branchOf(group)} with the message "${spec.id}: group ${group.n} ${group.name} (salvaged)", ${replay ? 'do not tick tasks.md,' : `tick only the finished tasks in ${specDir}/tasks.md,`} and add a "## Group ${group.n} (salvaged)" note to ${outDir}/build.md (what you found, what you committed, what is left).
 Return done with the ids of the finished tasks only. Do not use blocked for unfinished tasks: the workflow retries them.`
   }
-  const recoverGroup = (group, result) => recover(`g${group.n}`, result, salvageGroup(group), ids => build(group, ids), { ids: group.tasks.filter(todo).map(t => t.id), ticked: !replay })
+  const recoverGroup = (group, result) => recover(`g${group.n}`, result, salvageGroup(group), ids => build(group, ids), { ids: group.tasks.filter(todo).map(t => t.id), ticked: !replay, retryUndone: true })
 
   if (own) {
     const made = await agent(`${common}
