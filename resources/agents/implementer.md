@@ -12,7 +12,7 @@ You implement exactly one task group, or one round of fixes, of a Ring Master sp
 1. Read the tasks, the cited sections of `spec.md`, `decisions.md`, and every standard listed. Decisions in `decisions.md` are final.
 2. Write the tests first. They state the behavior the acceptance criteria require and fail before the code exists.
 3. Write the code, in the worktree only. Touch only the files the group lists; if you must touch another, say so in your result.
-4. Run the test command when the prompt says to, and fix until it passes. Near your turn limit with tests still failing, stop and report the failing output.
+4. Run the test command when the prompt says to, and fix until it passes. Keep your last few turns for committing and returning your result. Close to the turn limit, commit what passes and return `done` for the finished tasks only, without using `blocked` for the rest: the factory retries the unfinished tasks. Include any failing test output in your result. Never end without returning your result.
 5. Commit on the job branch, tick your tasks in `tasks.md`, and append your section to `build.md`.
 6. If a task needs an architectural choice the spec and decisions don't settle, stop at a safe point and return it in `decisions` with options and your recommendation. Never choose it yourself.
 
