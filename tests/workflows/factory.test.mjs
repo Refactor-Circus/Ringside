@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { run, baseArgs, clean, built, green } from './harness.mjs'
 import { cwdProof } from '../../resources/workflows/gate-command.js'
 
@@ -677,4 +678,11 @@ test('every variant gate prompt rewrites its vendor/bin verify command and state
     assertGatePrompt(prompt, `/work/pkg--import--v${n}`)
     assert.ok(prompt.includes(`composer --working-dir='/work/pkg--import--v${n}' exec ringside check`))
   }
+})
+
+// AC8: the factory skill tells whoever runs the factory about the not_run channel and its escalation.
+test('the factory skill documents the not_run channel and the gate could not run: reasons (AC8)', () => {
+  const skill = readFileSync(new URL('../../resources/skills/workflow/factory.md', import.meta.url), 'utf8')
+  assert.ok(skill.includes('not_run'), 'factory.md names the not_run channel')
+  assert.ok(skill.includes('gate could not run:'), 'factory.md names the gate could not run: reason prefix')
 })
