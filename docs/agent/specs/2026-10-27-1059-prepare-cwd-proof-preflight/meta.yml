@@ -1,6 +1,7 @@
 id: 2026-10-27-1059-prepare-cwd-proof-preflight
 title: Make Prepare cwd-proof and add a preflight
-status: approved
+status: closed
+pr: https://github.com/Refactor-Circus/Ringside/pull/3
 review_passes: 2
 created: 2026-10-27
 ticket: { provider: file, key: T-002, url: docs/agent/tickets/T-002.md }
@@ -8,3 +9,14 @@ standards:
   refactor-circus/standards:
     version: dev-main
     reference: 2e6440f82ca5
+runs:
+  - workflow: ring-master-factory
+    run_id: wf_79abbe9e-4f7
+    result: approved
+    round: 2
+    date: 2026-10-28
+  - workflow: ring-master-factory
+    run_id: wf_e86c17e7-1ed
+    result: needs-decision
+    round: 1
+    date: 2026-10-27

@@ -1,6 +1,7 @@
 id: 2026-10-27-1101-recover-build-group-no-result
 title: Recover a build group that returns no result instead of escalating
-status: needs-decision
+status: in-review
+pr: { number: 4, url: "https://github.com/Refactor-Circus/Ringside/pull/4" }
 review_passes: 2
 created: 2026-10-27
 ticket: { provider: file, key: T-003, url: docs/agent/tickets/T-003.md }
@@ -12,3 +13,6 @@ runs:
   - { workflow: ring-master-factory, run_id: wf_c263c978-686, result: failed (launched without job JSON), round: 0, date: 2026-10-27 }
   - { workflow: ring-master-factory, run_id: wf_e4a8ef18-3c1, result: stopped at prepare (workspace setup denied), round: 0, date: 2026-10-27 }
   - { workflow: ring-master-factory, run_id: wf_d373ca28-4c8, result: needs-decision (build, group 2 blocked), round: 0, date: 2026-10-27 }
+  - { workflow: ring-master-factory, run_id: wf_eb58e107-8ce, result: failed (launched without config in job JSON), round: 0, date: 2026-10-27 }
+  - { workflow: ring-master-factory, run_id: wf_37d31b6e-aff, result: needs-decision (rework, ringside check in gate), round: 2, date: 2026-10-27 }
+  - { workflow: ring-master-factory, run_id: wf_a8898960-1bf, result: approved, round: 1, date: 2026-10-28 }

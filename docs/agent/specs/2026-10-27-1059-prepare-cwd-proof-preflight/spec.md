@@ -2,6 +2,8 @@
 
 Ticket: [T-002](../../tickets/T-002.md)
 
+> Addendum 2026-10-28 (D-009): this job also carries the Windows CI fix (commit 0a99916) in `src/Worktree.php` and `tests/Feature/ImpactTest.php`. The "no PHP changes" statement no longer applies to those two files.
+
 ## Goal
 The factory's Prepare stage works whatever the session's cwd is, and stops before the build, not after it, when main is dirty, there is no remote for the PR, or `ringside check` cannot apply to the package.
 

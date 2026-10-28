@@ -9,7 +9,7 @@ argument-hint: "[spec id]"
 
 Architectural decisions belong to the user. Never answer them yourself.
 
-1. Pick the spec: `$ARGUMENTS`, or the newest `needs-decision` spec. Read the open questions from `questions.yml` (older specs: from `decision.md`).
+1. Pick the spec: `$ARGUMENTS`, or the newest `needs-decision` spec. Read the open questions from `questions.yml` (older specs: from `decision.md`). If `questions.yml` is `[]` while the status is still `needs-decision`, the answers were recorded but the job never relaunched: skip to step 6 and relaunch from the newest `D-xxx` entries' raised-by.
 2. For each question, use AskUserQuestion: the question, each option (the agents' recommendation first, marked recommended), and the evidence in one line. The user may answer with their own option. When `/ring-master-inbox` brings answers the user gave in RingMaster, use those as given and don't ask again.
 3. Append each answer to `decisions.md` as the next `D-xxx` entry (question, choice, rationale, date, raised by). Never edit earlier entries. Then rewrite `questions.yml` without the answered entries (with the Write tool; `[]` when none are left).
 4. If an answer changes scope, add a dated "Addendum" section to `spec.md` and, if needed, new tasks to `tasks.md`.

@@ -89,8 +89,8 @@ final class TaskParser
             }
         }
 
-        $settled = array_keys(array_filter($byNumber, static fn (array $group): bool => (bool) $group['done']));
-        $pending = array_filter($byNumber, static fn (array $group): bool => ! $group['done']);
+        $settled = array_keys(array_filter($byNumber, self::built(...)));
+        $pending = array_filter($byNumber, static fn (array $group): bool => ! self::built($group));
         $waves = [];
 
         while ($pending !== []) {
@@ -107,6 +107,33 @@ final class TaskParser
         }
 
         return $waves;
+    }
+
+    /**
+     * Whether a group needs no more building: every task is ticked except, at
+     * most, the one that only runs the test suite. The gate runs the suite
+     * every round, and with parallel builds the build agents are told not to,
+     * so that task alone must never send the group back to be built again.
+     *
+     * @param  array<string, mixed>  $group
+     */
+    public static function built(array $group): bool
+    {
+        /** @var list<array{id: string, text: string, done: bool}> $tasks */
+        $tasks = $group['tasks'] ?? [];
+
+        return $tasks !== [] && array_filter($tasks, static fn (array $task): bool => ! $task['done'] && ! self::runsTests($task['text'])) === [];
+    }
+
+    /**
+     * A task that only runs the tests ("Run composer test; all green"), as
+     * create-tasks ends every group with.
+     */
+    public static function runsTests(string $text): bool
+    {
+        return preg_match('/^\W*run\b/i', $text) === 1
+            && preg_match('/\b(tests?|suite|pest|phpunit|verify)\b/i', $text) === 1
+            && preg_match('/\b(write|implement|add|fix|change|update|create)\b/i', $text) === 0;
     }
 
     /**
