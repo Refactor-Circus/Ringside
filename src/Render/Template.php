@@ -98,7 +98,7 @@ final class Template
             'run_tests' => 'yes',
             'parallel' => $config->bool('build.parallel') ? 'yes' : 'no',
             'max_concurrency' => (string) max(1, $config->int('build.max_concurrency')),
-            'max_turns' => (string) max(1, (int) ($config->role('implementer')['max_turns'] ?? 40)),
+            'max_turns' => (string) max(1, (int) ($config->role('implementer')['max_turns'] ?? 80)),
             'spec_id_format' => $config->string('spec_id_format'),
             'rounds_max' => (string) $config->int('review.rounds.max'),
             'rework_threshold' => $config->string('review.rework_threshold'),

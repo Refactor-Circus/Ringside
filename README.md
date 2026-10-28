@@ -135,9 +135,9 @@ roles:                                 # model, effort, max_turns per role; ever
   writer:      { model: opus }         # skill: write-spec
   planner:     { model: opus }         # skill: create-tasks
   prepare:     { model: haiku,  effort: low }
-  implementer: { model: opus,   effort: high, max_turns: 40 }
+  implementer: { model: opus,   effort: high, max_turns: 80 }
   integrator:  { model: opus,   effort: high }                  # merges parallel group worktrees
-  reworker:    { model: opus,   effort: high, max_turns: 40, escalate_model: opus }   # escalate_model: null turns escalation off
+  reworker:    { model: opus,   effort: high, max_turns: 80, escalate_model: opus }   # escalate_model: null turns escalation off
   gate:        { model: sonnet, effort: low, escalate_model: opus }
   reviewer:    { model: sonnet, effort: medium }
   triage:      { model: haiku,  effort: low, enabled: true }    # dedupes findings when there is more than one
@@ -181,6 +181,8 @@ new_package: { type: laravel, vendor: null, namespace: null, features: [config],
 ```
 
 `ringside check` validates the file.
+
+The `implementer` and `reworker` get 80 turns by default (they had 40), so a build group has room to commit and return its result. A `max_turns` your `ring-master.yml` already sets, published from this example or overridden, stays as it is.
 
 With `build.worktree.mode: per-job`, the factory sets up a single package's job worktree with `ringside worktrees <spec> --setup`. `setup: auto` copies the package's `composer.local.json` (and `composer.local.lock`) into the worktree when it has one, leaving a copy the worktree already holds alone, and runs `composer install` with `COMPOSER=composer.local.json`, so its local path repositories (`../Keystone`) resolve as in the main checkout; without one it runs a plain `composer install`. Any other `setup` value is a command run in the worktree as is.
 
