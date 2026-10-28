@@ -9,7 +9,8 @@ export const meta = {
 }
 
 const { spec, job, index = {}, config, comments = {}, runs = [], rejected = [], existing = [] } = args
-const specDir = `${job.root}/${spec.dir}`
+// The spec folder wherever it lives (its job worktree, or main once merged); an older job JSON names only spec.dir, on main.
+const specDir = spec.path || `${job.root}/${spec.dir}`
 const globalPackages = (config.standards.global || []).map(g => (typeof g === 'string' ? g : g.package))
 const globalAccepts = globalPackages.length > 0 && config.discovery.global.mode !== 'off'
 const opts = (role, extra = {}) => {

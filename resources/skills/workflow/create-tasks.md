@@ -7,7 +7,7 @@ argument-hint: "[spec id; defaults to the newest approved spec]"
 
 # Create tasks
 
-Pick the spec: `$ARGUMENTS` when given, otherwise the newest folder in `{{specs_dir}}/` whose `meta.yml` has `status: approved`. Read `spec.md` and `standards.md`.
+Pick the spec: `$ARGUMENTS` when given, otherwise the newest `approved` spec in `vendor/bin/ringside specs`; `vendor/bin/ringside spec path <id>` prints its folder. Read `spec.md` and `standards.md`.
 
 Write `tasks.md` as task groups. A group is a slice one agent can finish in one sitting: usually one component and its tests.
 
@@ -32,10 +32,12 @@ criteria: 3
 Rules:
 
 - The first task of every group writes its tests; the last runs `{{test_command}}`.
-- In a workspace (ring-master.yml has `workspace.packages`), every group starts with `package: <folder>` naming the one package it changes, either an existing one or one listed under `new_packages` in `meta.yml` (the factory creates those first). Give a new package a first group that wires it into the suite (its dependencies on other workspace packages, `bin/composer-local.php` and the `local:install` scripts if the others have them, the shared arch preset), before groups that build features; split work that touches two packages into two groups, with the dependent package's group depending on the other.
+- Every group changes this package only: a spec lives in the package it changes. Work another package needs is its own spec there (see `/ring-master-shape-spec`); if you find some, stop and say so rather than adding a group for it.
 - `depends on:` lists group numbers that must be done first, or `none`.
 - `files:` lists every file the group creates or changes. Groups that could run in parallel must not share files.
 - `criteria:` names the acceptance criteria from `spec.md` the group proves. Every criterion appears in at least one group.
 - Use as few groups as the work allows; do not split a component across groups.
 
-Show the user the group list (name, depends on, criteria). Next step: `/ring-master-implement`.
+Show the user the group list (name, depends on, criteria), and commit the record: `vendor/bin/ringside spec commit <id> "tasks"`. Next step: `/ring-master-implement`.
+
+{{spec_record}}

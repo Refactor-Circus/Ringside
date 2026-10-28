@@ -7,7 +7,7 @@ argument-hint: "[what you want to build]"
 
 # Shape a spec
 
-Turn an idea into a spec folder under `{{specs_dir}}/`. Shaping is lightweight: capture scope, decisions and context, not the full design (that is `/ring-master-write-spec`).
+Turn an idea into a spec folder (`{{specs_dir}}/<id>/`, in the spec's own job worktree). Shaping is lightweight: capture scope, decisions and context, not the full design (that is `/ring-master-write-spec`).
 
 Ask the user with the AskUserQuestion tool whenever you need input, and offer concrete options they can confirm or adjust.
 
@@ -15,15 +15,16 @@ Ask the user with the AskUserQuestion tool whenever you need input, and offer co
 
 0. **Ticket.** If `$ARGUMENTS` is a spec id whose `meta.yml` has a `ticket:`, or a ticket ref, fetch the ticket with `/ring-master-ship`'s tracker adapter and use its title and description as the brief. Keep the existing spec folder; don't create a second one.
 1. **Scope.** Start from `$ARGUMENTS` when given. Ask one or two clarifying questions only where the scope is unclear: new feature or change, expected outcome, hard constraints.
+   **One package per spec.** A spec changes this package only, and lives in it. When the work also needs changes in other packages, shape only this package's part here, and give each other package its own spec in that package (from `/ring-master-inbox`, `propose-task` for each one, with `waits_for_this: true` when it needs this one merged first, or `blocks: true` when this one needs it first; otherwise tell the user which specs to shape next and in which order). Never plan changes to another package inside this spec.
 2. **Product context.** If `{{product_dir}}/` has files, read `mission.md` and `roadmap.md` and note anything this work must align with.
 3. **References.** Ask whether similar code exists in this package or a sibling package. Read what they point to and note the patterns worth reusing.
 4. **Visuals.** Ask for mockups or screenshots only when the work has a UI surface.
 5. **Standards.** Read `{{index_path}}`. Pick the standards whose description or tags fit this work, and confirm the list with the user. Read only the confirmed files; never load the whole index's files.
-6. **Folder.** Create `{{specs_dir}}/<id>/` where `<id>` follows `{{spec_id_format}}` with the current local time: `YYYY-MM-DD`, `HHMM`, and a lowercase hyphenated slug of at most 40 characters.
+6. **Folder.** Unless the ticket step already made it, create the spec with `vendor/bin/ringside spec new "<Feature name>" --json`: it makes `<id>` (`{{spec_id_format}}`), the job worktree and branch that hold the spec, and the folder with a starting `meta.yml`, and prints its `path`. Write everything below in that folder.
 
 ## Write
 
-- `meta.yml`:
+- `meta.yml` (keep what `spec new` wrote; add the rest):
 
   ```yaml
   id: <id>
@@ -40,4 +41,6 @@ Ask the user with the AskUserQuestion tool whenever you need input, and offer co
 
 ## Finish
 
-Tell the user the folder path and that the next step is `/ring-master-write-spec`.
+Commit the record: `vendor/bin/ringside spec commit <id> "shaped"`. Tell the user the folder path and that the next step is `/ring-master-write-spec`.
+
+{{spec_record}}

@@ -21,7 +21,7 @@ export const meta = {
 // The script never reads files; agents do, and each writes its own report.
 // ---------------------------------------------------------------------------
 
-const { spec, job, waves, decisions = [], index = {}, reviewers = [], config, workspace = null, impact = { enabled: false, consumers: [] }, replay = false, replay_from = null } = args
+const { spec, job, waves, decisions = [], index = {}, reviewers = [], config, impact = { enabled: false, consumers: [] }, replay = false, replay_from = null } = args
 // cwdProof: an exact copy of resources/workflows/gate-command.js (D-010). The Workflow tool runs
 // a script on its own and loads no other module, so the helper is inlined; a test keeps the copy identical.
 // --- cwdProof:begin ---
@@ -129,7 +129,8 @@ function split(command) {
 // --- cwdProof:end ---
 const SEVERITIES = ['architectural', 'blocker', 'major', 'minor', 'nit']
 const review = config.review
-const specDir = `${job.root}/${spec.dir}`
+// The spec folder lives in the job worktree from the moment the spec is made (spec.path); an older job JSON names only spec.dir, on main.
+const specDir = spec.path || `${job.root}/${spec.dir}`
 // A replay (an evaluation run) writes its reports under replay/ and never ticks tasks.md, so the real job's folder stays as it was.
 const outDir = replay ? `${specDir}/replay` : specDir
 const variantCount = Math.max(1, Math.min(4, Number(args.variants) || 1))
@@ -236,9 +237,7 @@ const globToRegex = glob => new RegExp('^' + glob
   .replace(/\u0000/g, '(?:.*/)?')
   .replace(/\u0001/g, '.*') + '$')
 const architecturalPaths = (config.escalation.architectural_paths || []).map(globToRegex)
-// In a workspace, files are reported as <Package>/<path>; the rules apply inside each package.
-const withinPackage = f => (workspace && workspace.packages[f.split('/')[0]] ? f.slice(f.indexOf('/') + 1) : f)
-const touchesArchitecture = files => (files || []).some(f => architecturalPaths.some(re => re.test(f) || re.test(withinPackage(f))))
+const touchesArchitecture = files => (files || []).some(f => architecturalPaths.some(re => re.test(f)))
 const decidedQuestions = new Set(decisions.map(d => d.question.trim().toLowerCase()))
 const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ')
 const findingKey = f => [(f.files || []).slice().sort().join(','), f.standard || f.category || '', norm(f.summary)].join('|')
@@ -286,23 +285,22 @@ const couldNotRun = (n, prefix = '') => `gate could not run: ${prefix}${n.comman
 const ringside = command => `composer --working-dir=${job.root} exec ringside -- ${command}`
 const noCd = 'Run each ringside command exactly as written, from whatever folder you are in: never `cd` into the worktree first.'
 
-// The dirty lines that matter: a path a task group lists, exactly or as a directory holding it. Spec folders are not: sessions write every job's reports into the main checkout, so another job's folder never blocks a build.
-// Lines are raw `git status --porcelain` output; in a workspace each is prefixed with its package folder and a colon.
+// The dirty lines that matter: a path a task group lists, exactly or as a directory holding it. Spec folders are not: each
+// job's own is in its worktree, and one left on main from before (untracked) never blocks a build. Lines are raw `git status --porcelain` output.
 const within = (path, dir) => path === dir || path.startsWith(`${dir}/`)
+const specsDir = String(spec.dir).split('/').slice(0, -1).join('/')
 const porcelainPaths = line => {
   const m = line.match(/^\s*[MADRCUT?!]{1,2}\s+(.+)$/)
   return (m ? m[1] : line.trim()).split(' -> ').map(p => p.trim().replace(/^"(.*)"$/, '$1')).filter(Boolean)
 }
 function dirtyOverlap(lines) {
   const hits = []
+  const listed = waves.flat().flatMap(g => g.files || [])
   for (const line of lines.map(String)) {
-    const prefixed = workspace && line.match(/^([^:]+):(.*)$/)
-    const pkg = prefixed && workspace.packages[prefixed[1].trim()] ? prefixed[1].trim() : null
-    const listed = waves.flat().filter(g => !workspace || g.package === pkg).flatMap(g => g.files || [])
-    for (const raw of porcelainPaths(pkg ? prefixed[2] : line)) {
+    for (const raw of porcelainPaths(line)) {
       const path = raw.replace(/\/+$/, '')
-      if (within(path, spec.dir)) continue
-      if (listed.some(f => within(f, path))) hits.push(pkg ? `${pkg}/${raw}` : raw)
+      if (within(path, spec.dir) || (specsDir && within(path, specsDir))) continue
+      if (listed.some(f => within(f, path))) hits.push(raw)
     }
   }
   return [...new Set(hits)]
@@ -322,7 +320,7 @@ function noProgress(history, current, rounds) {
 }
 
 const common = `You are working on the Ring Master job for spec "${spec.title}" (${spec.id}).
-Code changes happen in the job worktree; reports go in the spec folder of the main checkout: ${outDir}.${replay ? ` This is a replay, an evaluation run: never push, never open or update a pull request, never call RingMaster's MCP tools, and never change ${specDir}/meta.yml, tasks.md, questions.yml or decision.md.` : ''}
+Code changes happen in the job worktree, and so do reports: the spec folder ${outDir} is in it, committed with the job, so never write a scratch file (a PR or issue body, a comment draft) there.${replay ? ` This is a replay, an evaluation run: never push, never open or update a pull request, never call RingMaster's MCP tools, and never change ${specDir}/meta.yml, tasks.md, questions.yml or decision.md.` : ''}
 Read ${specDir}/spec.md and ${specDir}/decisions.md (if present) first. Decisions there are final: never re-raise them.
 Standards that apply: ${spec.standards.length ? spec.standards.map(p => `${job.root}/${p}`).join(', ') : 'see ' + specDir + '/standards.md'}.
 Shell: one command per Bash call, with no \`&&\`, \`;\` or pipes. A session started by RingMaster's runner only runs the commands it allows, and a compound command is refused as a whole. To work in another folder, run \`cd <folder>\` as its own call first, or use \`git -C <folder>\` and \`composer --working-dir=<folder>\`. Read files with the Read tool, not cat. If a command is refused, split it up and try again before you report a failure.`
@@ -387,19 +385,14 @@ async function recover(label, result, salvagePrompt, retry, { ids = [], ticked =
 
 phase('Prepare')
 const worktreeMode = config.build.worktree.mode
-const packages = workspace ? Object.keys(workspace.packages) : []
 // The job opens a PR under the same condition it pushes one: not a replay, and the config names a host.
 const opensPr = !replay && Boolean(config.host && config.host.provider)
-const setupStep = workspace
-  ? `This is a workspace job across ${packages.join(', ')}. Run \`${ringside(`worktrees ${spec.id} --setup`)}\` and return ready=true only if it exits 0 (put its output in detail otherwise).`
-  : worktreeMode === 'per-job'
+const setupStep = worktreeMode === 'per-job'
   ? `Run \`${ringside(`worktrees ${spec.id} --setup${replay ? ` --replay${replay_from ? ` --from=${replay_from}` : ''}` : ''}`)}\`: it creates or reuses the job worktree at ${job.worktree} on branch ${job.branch} and installs its dependencies. Return ready=true only if it exits 0, with worktree set to the path it prints. On a non-zero exit, return ready=false with the command output in detail: do not repair anything manually, and never create the worktree with git yourself or fall back to any other command.`
   : `Work in ${job.root} itself: create or check out branch ${job.branch} (based on ${config.host.base}).`
-// The preflight (non-replay only): main's uncommitted changes, the origin remote, and whether ringside check applies. Workspace jobs check each package folder.
-const preflightDirs = workspace ? packages.map(p => [p, `${job.root}/${p}`]) : [[null, job.root]]
-const every = workspace ? ' in every package folder' : ''
-const preflight = `Preflight first, before anything else, each command as its own Bash call (never a compound command)${workspace ? ', for each package folder in turn' : ''}: ${preflightDirs.map(([p, dir]) => `${p ? `${p}: ` : ''}\`git -C ${dir} status --porcelain\`, then \`git -C ${dir} remote get-url origin\`, then check with the Read or Glob tool that ${dir}/docs/agent/standards.index.yml and ${dir}/ring-master.yml exist`).join('; ')}.
-Return dirty as every line \`git status --porcelain\` printed, exactly as printed (tracked-modified and untracked lines both count; [] when it printed nothing)${workspace ? `, each prefixed with its package folder and a colon, as in \`${packages[0]}: M src/Example.php\`` : ''}; the script decides which lines matter. Return remote=true only if \`remote get-url origin\` exited 0${every}, and check_applies=true only if both files exist${every}. Name a missing remote or file in detail.
+// The preflight (non-replay only): main's uncommitted changes, the origin remote, and whether ringside check applies.
+const preflight = `Preflight first, before anything else, each command as its own Bash call (never a compound command): \`git -C ${job.root} status --porcelain\`, then \`git -C ${job.root} remote get-url origin\`, then check with the Read or Glob tool that ${job.root}/docs/agent/standards.index.yml and ${job.root}/ring-master.yml exist.
+Return dirty as every line \`git status --porcelain\` printed, exactly as printed (tracked-modified and untracked lines both count; [] when it printed nothing); the script decides which lines matter. Return remote=true only if \`remote get-url origin\` exited 0, and check_applies=true only if both files exist. Name a missing remote or file in detail.
 If dirty is non-empty or remote is false, return ready=false with dirty, remote and check_applies, and do not run \`worktrees --setup\` or any other setup step below, so no worktree or branch is left behind. Otherwise go on.`
 const ws = await agent(`${common}
 Prepare the job workspace. ${noCd}
@@ -448,19 +441,16 @@ Return ready=false with the error output in detail if anything fails.`, opts('pr
   }
 }
 if (!prepared || !prepared.ready) return finish({ status: 'escalated', stage: 'prepare', reasons: ['workspace setup failed'], detail: prepared && prepared.detail })
-if (!gateCheck && !workspace) log(`Gate: ringside check dropped for this run, because it does not apply to this package (${ws.detail || 'no docs/agent/standards.index.yml or ring-master.yml'}).`)
-const tree = workspace ? `${job.root}/${workspace.dir}` : prepared.worktree || (worktreeMode === 'per-job' ? job.worktree : job.root)
-const treeFor = pkg => (workspace && pkg ? `${tree}/${pkg}` : tree)
-const command = (pkg, name) => (workspace && pkg ? workspace.packages[pkg].commands[name] : config.commands[name])
-const trees = workspace ? packages.map(p => `${p}: ${treeFor(p)}`).join('; ') : tree
+if (!gateCheck) log(`Gate: ringside check dropped for this run, because it does not apply to this package (${ws.detail || 'no docs/agent/standards.index.yml or ring-master.yml'}).`)
+const tree = prepared.worktree || (worktreeMode === 'per-job' ? job.worktree : job.root)
 // ringside check does not apply to Ringside itself (D-009, tooling/verification-gate), so its gates leave it out.
 // The package is named after the job root's folder, as Job.php names it.
 const ringsideCheck = !/^ringside$/i.test(String(job.root).replace(/[\\/]+$/, '').split(/[\\/]/).pop())
 
 // --- Build -----------------------------------------------------------------
 
-const variants = variantCount > 1 && !workspace && worktreeMode === 'per-job' ? variantCount : 1
-if (variantCount > 1 && variants === 1) log(`Variants: ${variantCount} asked, but only a single package with per-job worktrees builds variants; building once.`)
+const variants = variantCount > 1 && worktreeMode === 'per-job' ? variantCount : 1
+if (variantCount > 1 && variants === 1) log(`Variants: ${variantCount} asked, but only a package with per-job worktrees builds variants; building once.`)
 const todo = t => replay || !t.done
 
 if (variants > 1) {
@@ -549,21 +539,21 @@ Variant ${winner} won. In ${tree}, fast-forward ${job.branch} to it: \`git -C ${
 
 phase('Build')
 const testsInGroup = !config.build.parallel
-// Parallel groups of a single per-job package each get their own worktree, then an integrator merges them.
-const groupTrees = config.build.parallel && worktreeMode === 'per-job' && !workspace
+// Parallel groups of a per-job package each get their own worktree, then an integrator merges them.
+const groupTrees = config.build.parallel && worktreeMode === 'per-job'
 const groupTree = n => `${tree}--g${n}`
 const groupBranch = n => `${job.branch}--g${n}`
 for (const wave of variants > 1 ? [] : waves) {
   const own = groupTrees && wave.length > 1
-  const whereOf = group => (own ? groupTree(group.n) : treeFor(group.package))
+  const whereOf = group => (own ? groupTree(group.n) : tree)
   const branchOf = group => (own ? groupBranch(group.n) : job.branch)
   const listed = (group, ids) => (ids ? group.tasks.filter(t => ids.includes(t.id)) : group.tasks.filter(todo)).map(t => `${t.id} ${t.text}`).join('; ')
   // ids, when given (a retry), replace the todo filter: only those tasks are listed.
   const build = (group, ids) => agent(`${common}
-Implement task group ${group.n}: "${group.name}" in ${own ? `its own worktree ${groupTree(group.n)} (branch ${groupBranch(group.n)}, made from ${job.branch}); other groups of this wave build beside it at the same time` : treeFor(group.package)}${workspace ? ` (package ${group.package}; the other packages of this job are beside it in ${tree})` : ''}.${ids ? ` This is a retry: earlier work on this group is already committed on ${branchOf(group)}; keep it and finish only the tasks below.` : ''}
+Implement task group ${group.n}: "${group.name}" in ${own ? `its own worktree ${groupTree(group.n)} (branch ${groupBranch(group.n)}, made from ${job.branch}); other groups of this wave build beside it at the same time` : tree}.${ids ? ` This is a retry: earlier work on this group is already committed on ${branchOf(group)}; keep it and finish only the tasks below.` : ''}
 Tasks: ${listed(group, ids)}.
-Files it owns: ${group.files.join(', ') || 'not listed'}.${workspace && workspace.packages[group.package].standards.length ? ` ${group.package}'s own standards, which override a global one with the same key: ${workspace.packages[group.package].standards.map(p => `${job.root}/${p}`).join(', ')}.` : ''} Acceptance criteria it proves: ${group.criteria.join(', ') || 'see tasks'}.
-Write the tests first, then the code. ${testsInGroup ? `Run \`${command(group.package, 'test')}\` in ${treeFor(group.package)} until it passes.` : 'Do not run the test suite; the gate runs it after the build. Tick the task that only runs the tests along with the others: the gate covers it.'}
+Files it owns: ${group.files.join(', ') || 'not listed'}. Acceptance criteria it proves: ${group.criteria.join(', ') || 'see tasks'}.
+Write the tests first, then the code. ${testsInGroup ? `Run \`${config.commands.test}\` in ${tree} until it passes.` : 'Do not run the test suite; the gate runs it after the build. Tick the task that only runs the tests along with the others: the gate covers it.'}
 Commit your changes on ${own ? groupBranch(group.n) : job.branch} with the message "${spec.id}: group ${group.n} ${group.name}", ${replay ? 'do not tick tasks.md,' : `tick the finished tasks in ${specDir}/tasks.md,`} and append a "## Group ${group.n}" section to ${outDir}/build.md (files, tests, deviations).
 If a task needs a choice the spec and decisions don't settle (a public contract, schema, config shape, dependency, module boundary, or two viable designs), stop at a safe point and return it in decisions with options and your recommendation instead of choosing.`,
     opts('implementer', { agentType: 'ring-master-implementer', phase: 'Build', label: ids ? `group ${group.n} retry` : `group ${group.n}`, schema: BUILT }))
@@ -576,7 +566,7 @@ If a task needs a choice the spec and decisions don't settle (a public contract,
 Salvage task group ${group.n}: "${group.name}" in ${where}. Its build agent ended without returning a result (out of turns, an API error, a timeout or a killed process), so its work may be half done and uncommitted.
 ${lockCheck(where)}
 Then run \`git -C ${where} status --porcelain${scope}\` and \`git -C ${where} diff${scope}\` and compare them with the group's tasks: ${listed(group)}.${scope ? ` Touch only these files (${group.files.join(', ')}); leave every other path alone, since other groups may have uncommitted work in the same tree.` : ''}
-${testsInGroup ? `${testIn(command(group.package, 'test'), where)} and keep only the work that passes.` : 'Do not run the test suite; the gate runs it after the build.'}
+${testsInGroup ? `${testIn(config.commands.test, where)} and keep only the work that passes.` : 'Do not run the test suite; the gate runs it after the build.'}
 Commit ${testsInGroup ? 'what passes' : 'the finished work'}${scope ? ', only those paths,' : ''} on ${branchOf(group)} with the message "${spec.id}: group ${group.n} ${group.name} (salvaged)", ${replay ? 'do not tick tasks.md,' : `tick only the finished tasks in ${specDir}/tasks.md,`} and add a "## Group ${group.n} (salvaged)" note to ${outDir}/build.md (what you found, what you committed, what is left).
 Return done with the ids of the finished tasks only. Do not use blocked for unfinished tasks: the workflow retries them.`
   }
@@ -627,25 +617,15 @@ let last = { findings: [], decisions: [] }
 
 for (let round = 1; round <= review.rounds.max; round++) {
   const roundDir = `${outDir}/round-${round}`
-  const scope = workspace ? ` in each package of the job (${trees})` : ''
-  const sinceNote = round === 1 ? `the whole diff of ${job.branch} against ${config.host.base}${scope}` : `the changes since round ${round - 1}${scope} (open findings were: ${history[history.length - 1].map(f => f.summary).join('; ') || 'none'})`
+  const sinceNote = round === 1 ? `the whole diff of ${job.branch} against ${config.host.base}` : `the changes since round ${round - 1} (open findings were: ${history[history.length - 1].map(f => f.summary).join('; ') || 'none'})`
 
   phase('Gate')
-  const runGate = (pkg, file) => agent(`${common}
-Run the gate in ${treeFor(pkg)}: \`${cwdProof(treeFor(pkg), command(pkg, 'verify'))}\`${command(pkg, 'format_check') ? ` and \`${cwdProof(treeFor(pkg), command(pkg, 'format_check'))}\`` : ''}${workspace || !(gateCheck && ringsideCheck) ? '' : `, then \`${cwdProof(treeFor(pkg), 'composer exec ringside check')}\` (through composer, never by path)`}.
+  const gate = await agent(`${common}
+Run the gate in ${tree}: \`${cwdProof(tree, config.commands.verify)}\`${config.commands.format_check ? ` and \`${cwdProof(tree, config.commands.format_check)}\`` : ''}${gateCheck && ringsideCheck ? `, then \`${cwdProof(tree, 'composer exec ringside check')}\` (through composer, never by path)` : ''}.
 ${notRunRule}
-${review.gate.criteria_mapping ? `Map every numbered acceptance criterion in spec.md${workspace ? ` that ${pkg} proves` : ''} to the test (file and name) or code that proves it.` : ''}
-Every failure is a blocker finding with the failing output summarised${workspace ? `; report files as ${pkg}/<path>` : ''}. List changed_files (git diff --name-only ${config.host.base}...${job.branch}${workspace ? `, prefixed with ${pkg}/` : ''}).
-Write ${roundDir}/${file} starting with "VERDICT: PASS" or "VERDICT: CHANGES".`, opts('gate', { phase: 'Gate', label: workspace ? `gate ${pkg} r${round}` : `gate r${round}`, schema: GATE }, red > 0))
-  const gate = workspace
-    ? await parallel(packages.map(p => () => runGate(p, `gate-${p}.md`))).then(gates => gates.some(g => !g) ? null : {
-        passed: gates.every(g => g.passed),
-        findings: gates.flatMap(g => g.findings),
-        changed_files: gates.flatMap(g => g.changed_files || []),
-        criteria: gates.flatMap(g => g.criteria || []),
-        not_run: gates.flatMap((g, i) => notRun(g).map(n => ({ ...n, command: `${packages[i]}: ${n.command}` }))),
-      })
-    : await runGate(null, 'gate.md')
+${review.gate.criteria_mapping ? 'Map every numbered acceptance criterion in spec.md to the test (file and name) or code that proves it.' : ''}
+Every failure is a blocker finding with the failing output summarised. List changed_files (git diff --name-only ${config.host.base}...${job.branch}), leaving out the spec folder.
+Write ${roundDir}/gate.md starting with "VERDICT: PASS" or "VERDICT: CHANGES".`, opts('gate', { phase: 'Gate', label: `gate r${round}`, schema: GATE }, red > 0))
 
   // A command the gate could not run leaves nothing to fix: escalate once, before the red and review
   // branch, so red, redRounds, rework and commits stay untouched (D-004). A null gate still counts red below.
@@ -657,7 +637,7 @@ Write ${roundDir}/${file} starting with "VERDICT: PASS" or "VERDICT: CHANGES".`,
     red = 0
     phase('Review')
     const run = r => agent(`${common}
-Review ${sinceNote}${workspace ? '' : ` in ${tree}`} as the ${r.name} reviewer.${workspace ? ` Report files as <Package>/<path>. Each package's own standards override a global one with the same key: ${packages.map(p => `${p}: ${workspace.packages[p].standards.length ? workspace.packages[p].standards.map(s => `${job.root}/${s}`).join(', ') : 'none'}`).join('; ')}.` : ''} Use the severity rubric in your instructions exactly.
+Review ${sinceNote} in ${tree} as the ${r.name} reviewer; the spec folder (${spec.dir}) is the job's own record, not code to review. Use the severity rubric in your instructions exactly.
 Return findings with severity, files, the standard key if one applies, and the fix. A clear break of a standard is a major finding fixed by following it; use category "standard-deviation" only when following the standard is impossible or wrong here.
 Put any choice the spec and decisions don't settle in decisions, never in findings.
 Write ${roundDir}/review-${r.name}.md starting with "VERDICT: PASS" or "VERDICT: CHANGES".`,
@@ -688,7 +668,7 @@ Write ${roundDir}/review-${r.name}.md starting with "VERDICT: PASS" or "VERDICT:
   if (current.decisions.length) {
     if (config.escalation.fix_others_first && fix.length) {
       phase('Rework')
-      await agent(`${common}\nFix these findings in ${workspace ? `the job's package worktrees (${trees}); each finding's file starts with its package` : tree} (round ${round}); do not touch the open questions listed after them.\nFindings: ${JSON.stringify(fix)}\nOpen questions (leave alone): ${JSON.stringify(current.decisions.map(d => d.question))}\nRun ${workspace ? "each changed package's test command" : `\`${config.commands.test}\``}, commit on ${job.branch}${workspace ? ' in every package you changed' : ''}, and note the fixes in ${outDir}/build.md.`,
+      await agent(`${common}\nFix these findings in ${tree} (round ${round}); do not touch the open questions listed after them.\nFindings: ${JSON.stringify(fix)}\nOpen questions (leave alone): ${JSON.stringify(current.decisions.map(d => d.question))}\nRun \`${config.commands.test}\`, commit on ${job.branch}, and note the fixes in ${outDir}/build.md.`,
         opts('reworker', { agentType: 'ring-master-implementer', phase: 'Rework', label: `rework r${round}`, schema: BUILT }, escalate))
     }
     return finish({ status: 'needs-decision', stage: 'review', round, decisions: current.decisions, findings: fix, nits })
@@ -704,7 +684,7 @@ Write ${roundDir}/review-${r.name}.md starting with "VERDICT: PASS" or "VERDICT:
 
   history.push(fix)
   phase('Rework')
-  await agent(`${common}\nFix these findings in ${workspace ? `the job's package worktrees (${trees}); each finding's file starts with its package` : tree} (round ${round}). Fix the nits too where it is cheap.\nFindings: ${JSON.stringify(fix)}\nNits: ${JSON.stringify(nits)}\nRun ${workspace ? "each changed package's test command" : `\`${config.commands.test}\``}, commit on ${job.branch}${workspace ? ' in every package you changed' : ''} with "${spec.id}: rework round ${round}", and note the fixes in ${outDir}/build.md.\nIf a fix needs a choice the spec doesn't settle, return it in decisions instead.`,
+  await agent(`${common}\nFix these findings in ${tree} (round ${round}). Fix the nits too where it is cheap.\nFindings: ${JSON.stringify(fix)}\nNits: ${JSON.stringify(nits)}\nRun \`${config.commands.test}\`, commit on ${job.branch} with "${spec.id}: rework round ${round}", and note the fixes in ${outDir}/build.md.\nIf a fix needs a choice the spec doesn't settle, return it in decisions instead.`,
     opts('reworker', { agentType: 'ring-master-implementer', phase: 'Rework', label: `rework r${round}`, schema: BUILT }, escalate)).then(r => {
     if (r && r.decisions && r.decisions.length) last = { ...last, decisions: r.decisions }
   })
@@ -746,7 +726,7 @@ let brief = null
 if (!replay && verdict.decision === 'approve') {
   phase('Brief')
   const briefed = await agent(`${common}
-Write ${specDir}/brief.md for the person who reviews this job's pull request. Read the diff (\`git -C ${workspace ? `${tree}/<package>` : tree} diff ${config.host.base}...${job.branch}\`${workspace ? ` in each package: ${packages.join(', ')}` : ''}), spec.md, decisions.md, and the last round's gate report under ${specDir}/round-*/.
+Write ${specDir}/brief.md for the person who reviews this job's pull request. Read the diff (\`git -C ${tree} diff ${config.host.base}...${job.branch} -- . ':(exclude)${spec.dir}'\`), spec.md, decisions.md, and the last round's gate report under ${specDir}/round-*/.
 The first line is exactly \`Risk: low\`, \`Risk: medium\` or \`Risk: high\`, then a blank line, then exactly these sections, in this order:
 ## What changed: the change in a few sentences, by area.
 ## Why: the problem it solves, from spec.md, with the decisions that shaped it.
@@ -766,7 +746,6 @@ return finish({
   findings_left: leftover,
   branch: job.branch,
   worktree: tree,
-  packages: workspace ? packages : null,
   rounds: history.length + 1,
   impact: broken,
   brief,

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0
+
+- Specs live in their job's worktree and are committed with the job. A spec folder used to sit untracked in the package's main checkout, so the spec, its decisions and its gate and review reports never reached git. `ringside spec new "<title>"` now creates the spec's id, its job worktree (`../<Package>--<id>` on `ring-master/<id>`) and its folder there; every stage commits the folder with `ringside spec commit <id> "<stage>"` (the spec folder alone, never on the main checkout's base branch), so the PR carries the record and the branch shows how each decision changed. `ringside spec path <id>` prints where a spec lives, and `ringside spec reopen <id>` makes `ring-master/<id>-record` from the base branch for a merged job's post-mortem, which lands as its own small PR. Every skill reads, writes and commits the spec there; the factory writes its reports into the worktree's spec folder and keeps it out of reviews and the brief's diff.
+- `Specs\Locator` finds every spec: merged ones on the main checkout, and each job's own in its worktree (a record worktree first), never one in a group, variant or replay worktree. The board, `ringside job`, `ringside specs`, `cleanup` and the session-start hook read through it. The board and `ringside job --json` add the absolute `path` (the board also `worktree`); `dir` stays relative to any checkout root, and `Board::file()` resolves it wherever the spec is.
+- `worktrees --setup` rebases a reused job branch that holds nothing but its spec record onto the base branch, so a job shaped days ago builds on today's code.
+- install gitignores scratch files and replay reports inside spec folders (`/docs/agent/specs/*/.*`, `**/*.tmp.*`, `*/*body*.md`, `*/replay/`).
+- `cleanup` lists and removes job worktrees by the spec status in them.
+- Workspace jobs are removed: a spec always lives in, and changes, one package, and work across packages is one spec per package (shape-spec and create-tasks say so). `ringside job --json` no longer has `workspace`, `worktrees` no longer has `--remove`, and `workspace.jobs_dir` is gone. `workspace.packages` stays, for RingMaster, `new-package` and the impact check.
+
 ## 0.10.0
 
 - `worktrees --setup` updates the worktree's own (gitignored) lock when `composer install` refuses it because the job branch moved a constraint past it, instead of failing Prepare on every relaunch.

@@ -37,6 +37,10 @@ Ringside replaces `refactor-circus/agent-kit`. Swap the dependency (`composer re
 
 Spec review, the factory and the post-mortem are [Claude Code workflows](https://code.claude.com/docs/en/workflows): scripts that orchestrate subagents in the background and return one result. They ship in `resources/workflows/` and the skills launch them by path. A workflow can't ask you anything mid-run, so each architectural question ends the run; your answer goes into the spec's `decisions.md` and the next run picks it up. After you answer spec review's questions it only rechecks that the answers landed, and after `max_passes` reviews it stops asking and lists what's left as notes for your approval. Tracker and host calls always run in your session, where your credentials and MCP connections are.
 
+### Where a spec lives
+
+A spec lives in its job's worktree (`../<Package>--<spec id>`, on `ring-master/<spec id>`) from the moment it is created: `ringside spec new "<title>"` makes the id, the worktree and the folder. Every stage writes the spec there and ends with `ringside spec commit <id> "<stage>"`, which commits the spec folder alone, so the job's PR carries the spec, its decisions and every gate and review report, and the branch's history shows how each changed. The main checkout never holds a spec until its PR merges. A merged job's post-mortem reopens the record on `ring-master/<spec id>-record` (`ringside spec reopen <id>`) and lands with a small PR of its own. `ringside spec path <id>` prints where a spec is; the board, `ringside job` and `ringside specs` find it wherever it lives. Scratch files and replay reports inside a spec folder are gitignored.
+
 ### The factory
 
 Each round starts with the gate (your verify command, the format check, `ringside check`, and every acceptance criterion mapped to a test). A red gate is fixed automatically before reviewers spend time on broken code. Reviewers run in parallel and return findings with a severity:
@@ -71,7 +75,7 @@ workspace:
   packages: [Keystone, Atrium, Cortex]
 ```
 
-A spec there can change several packages: each task group names its package (`package: Atrium`). The factory gives the job its own folder (`.ring-master/jobs/<spec>/`) with a worktree on the job branch for every package it changes and a link to the main checkout of every other one, so a package's local path repositories (`../Keystone`) resolve to the job's versions. Each package is built, tested and gated with its own commands, in dependency order, and the job ends with one PR per package. `ringside worktrees <spec> [--setup|--remove]` manages the job folder.
+A spec always lives in, and changes, one package. Work across packages is one spec per package, each in its own package with its own worktree and PR; under RingMaster they are linked as task dependencies, so a package that needs another's change waits for that PR to merge.
 
 A spec can also create a package. List it under `new_packages` in the spec's `meta.yml` (name, type, features, dependencies); spec review asks you to settle each of those, since a new package is an architectural decision. The factory then runs `ringside new-package`, which scaffolds a Laravel package with the Laravel installer's `laravel package` command (or a plain PHP one with `composer init`), commits it on `main` and adds it to the workspace, before building. Publishing its repository stays your step.
 
@@ -175,7 +179,7 @@ discovery:
 hooks:
   post_edit_format: { enabled: true, command: 'vendor/bin/pint {file}' }
   session_start_summary: true
-workspace: { packages: [], jobs_dir: .ring-master/jobs }   # set packages to work across several from a parent folder
+workspace: { packages: [] }             # the packages of a parent folder, for RingMaster, new-package and the impact check
 board: { app: null }                     # the RingMaster app's folder; enables /ring-master-inbox and the session summary
 new_package: { type: laravel, vendor: null, namespace: null, features: [config], laravel_bin: laravel, php: '^8.5' }
 ```
@@ -200,10 +204,11 @@ Built-in adapters: `github` (tracker and host, via `gh`), `jira` (tracker, via t
 | `ref <input>` | classify input as a ticket ref or an idea (JSON) |
 | `job <spec> --json [--replay]` | the workflow arguments for a spec (`variants`, `brief`, `impact` included); `--replay` for a replay run |
 | `specs` | list specs with status and progress |
+| `spec new\|path\|commit\|reopen <spec> [<message>] [--status=] [--json]` | `new "<title>"`: create a spec in a new job worktree on its job branch; `path`: print where a spec lives; `commit <id> "<stage>"`: commit the spec folder alone on its branch; `reopen <id>`: a record worktree for a merged spec's post-mortem |
 | `index --accept <key>` | record a reviewed override |
 | `propose <key> --repo=<path>` | commit a global standards proposal on a branch of the global package |
 | `cleanup [--remove]` | list or remove finished job worktrees |
-| `worktrees <spec> [--setup\|--remove\|--groups=1,3\|--remove-groups\|--variants=N\|--remove-variants\|--replay [--from=<commit>]\|--remove-replay]` | create or reuse a job's worktree and, with `--setup`, install its dependencies; `--groups` makes a worktree per task group from the job branch and `--variants=N` one per variant (2 to 4), the `--remove-…` options remove them and their branches; `--replay` acts on the replay worktree instead (from `--from`, default the base branch), `--remove-replay` removes it; workspaces: a folder of package worktrees, which `--remove` removes |
+| `worktrees <spec> [--setup\|--groups=1,3\|--remove-groups\|--variants=N\|--remove-variants\|--replay [--from=<commit>]\|--remove-replay]` | create or reuse a job's worktree and, with `--setup`, install its dependencies; `--groups` makes a worktree per task group from the job branch and `--variants=N` one per variant (2 to 4), the `--remove-…` options remove them and their branches; `--replay` acts on the replay worktree instead (from `--from`, default the base branch), `--remove-replay` removes it; a reused job branch that holds only its spec record is rebased onto the base branch first |
 | `impact <spec> [--package=<Folder>] [--list] [--json]` | run each consuming package's tests against the job worktree in a throwaway worktree of its own (exits 0 once the checks ran; the results say which pass), or list the consumers |
 | `new-package <Name> [--type] [--feature=...] [--dry-run]` | workspaces: scaffold, git init and register a new package |
 | `migrate [--dry-run]` | move an Agent OS install into `docs/agent/` |

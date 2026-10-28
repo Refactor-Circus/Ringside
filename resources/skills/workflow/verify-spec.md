@@ -7,7 +7,7 @@ argument-hint: "[spec id; defaults to the newest in-progress spec]"
 
 # Verify the spec
 
-Pick the spec: `$ARGUMENTS` when given, otherwise the newest `in-progress` spec in `{{specs_dir}}/`. Read `spec.md` and `tasks.md`.
+Pick the spec: `$ARGUMENTS` when given, otherwise the newest `in-progress` spec in `vendor/bin/ringside specs`; `vendor/bin/ringside spec path <id>` prints its folder. Read `spec.md` and `tasks.md`.
 
 Run every check and record the result. Do not stop at the first failure.
 
@@ -37,4 +37,6 @@ Date: <YYYY-MM-DD> · Result: PASS | FAIL
 - [ ] 2.2 <why>
 ```
 
-When every check passes, set `status: done` in `meta.yml`. When anything fails, leave `status: in-progress`, untick the tasks to reopen in `tasks.md`, and tell the user what failed and how to resume (`/ring-master-implement <spec> <group>`).
+When every check passes, set `status: done` in `meta.yml`. When anything fails, leave `status: in-progress`, untick the tasks to reopen in `tasks.md`, and tell the user what failed and how to resume (`/ring-master-implement <spec> <group>`). Either way, commit the record: `vendor/bin/ringside spec commit <id> "verified"` (or "verification failed").
+
+{{spec_record}}
