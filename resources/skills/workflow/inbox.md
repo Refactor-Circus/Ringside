@@ -50,7 +50,7 @@ Every stage is a skill you invoke with the Skill tool; this one is the only one 
 
 ## Unattended mode
 
-The user is not watching this session; RingMaster is where they answer. Wherever a stage would ask them anything (AskUserQuestion, confirming a ticket draft, confirming the standards list, approving the spec):
+The user is not watching this session; RingMaster is where they answer. Wherever a stage would ask them anything (AskUserQuestion, confirming the standards list, approving the spec):
 
 1. Make sure the spec folder exists first (create it as the stage would, with the status it would have), so the question has a home.
 2. Write each question to the spec's `questions.yml` (format in `/ring-master-decide`) with concrete options, your recommendation (the exact text of one option, not a letter), the evidence in one line, and `source:` the stage to come back to: `ticket`, `shape`, `spec-review`, `approval`, `tasks` or `build`. Ask everything that stage needs in one go. Check each against `precedents` first (below).
@@ -60,7 +60,7 @@ The user is not watching this session; RingMaster is where they answer. Wherever
 
 Run one command per Bash call (no `;`, `&&` or pipes): a session started by RingMaster's runner may only run the commands it allows, and a compound command is refused as a whole.
 
-Never answer an architectural question yourself, never merge, and never push or create anything outside the repo that the stage would not (a ticket waits for its `ticket` answer before it is created).
+Never answer an architectural question yourself, never merge, and never push or create anything outside the repo that the stage would not (unattended, the ticket stage creates its ticket as drafted without asking; see `/ring-master-ticket`).
 
 ## Loop
 

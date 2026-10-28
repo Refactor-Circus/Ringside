@@ -1212,3 +1212,17 @@ test('the factory skill documents the not_run channel and the gate could not run
   assert.ok(skill.includes('not_run'), 'factory.md names the not_run channel')
   assert.ok(skill.includes('gate could not run:'), 'factory.md names the gate could not run: reason prefix')
 })
+
+// The Workflow tool runs a script on its own and refuses import(), so cwdProof is inlined.
+test('workflow scripts use no import, and the inlined cwdProof is an exact copy of gate-command.js', () => {
+  const dir = new URL('../../resources/workflows/', import.meta.url)
+  for (const name of ['ring-master-factory.js', 'ring-master-spec-review.js', 'ring-master-post-mortem.js']) {
+    const source = readFileSync(new URL(name, dir), 'utf8')
+    assert.doesNotMatch(source, /\bimport\s*\(|^\s*import\s/m, `${name} imports nothing`)
+  }
+  const factory = readFileSync(new URL('ring-master-factory.js', dir), 'utf8')
+  const inline = factory.slice(factory.indexOf('// --- cwdProof:begin ---\n') + '// --- cwdProof:begin ---\n'.length, factory.indexOf('// --- cwdProof:end ---'))
+  const module = readFileSync(new URL('gate-command.js', dir), 'utf8')
+  const body = module.slice(module.indexOf('const WORKING_DIR')).trimEnd() + '\n'
+  assert.equal(inline, body.replace('export function cwdProof', 'function cwdProof'))
+})
