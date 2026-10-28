@@ -173,13 +173,13 @@ final class Worktree
         $log = [];
         $job = self::absolute($project, $jobPath);
         // git lists real paths (/private/var for /var on macOS), so both spellings count.
-        $prefixes = array_unique([$job.$suffix, (realpath(dirname($job)) ?: dirname($job)).'/'.basename($job).$suffix]);
+        $prefixes = array_map(self::comparable(...), array_unique([$job.$suffix, (realpath(dirname($job)) ?: dirname($job)).'/'.basename($job).$suffix]));
         $pattern = '/'.preg_quote($suffix, '/').$number.'$/';
         [, $list] = Shell::run(['git', 'worktree', 'list', '--porcelain'], $project->root);
 
-        foreach (explode("\n", $list) as $line) {
+        foreach (preg_split('/\R/', $list) ?: [] as $line) {
             $path = str_starts_with($line, 'worktree ') ? substr($line, 9) : '';
-            $ours = array_filter($prefixes, static fn (string $prefix): bool => str_starts_with($path, $prefix)) !== [];
+            $ours = array_filter($prefixes, static fn (string $prefix): bool => str_starts_with(self::comparable($path), $prefix)) !== [];
 
             if ($path !== '' && $ours && preg_match($pattern, $path) === 1) {
                 [$code, $out] = Shell::run(['git', 'worktree', 'remove', '--force', $path], $project->root, withStderr: true);
@@ -280,6 +280,18 @@ final class Worktree
 
             throw new RuntimeException("The worktree at {$worktree} is on {$actual}, not `{$branch}`. Check out `{$branch}` there or remove the worktree, then run again.");
         }
+    }
+
+    /**
+     * $path spelled the way git lists worktrees, for comparing: forward
+     * slashes (git prints C:/… on Windows where PHP builds C:\…), and
+     * case-folded on Windows, whose paths ignore case.
+     */
+    private static function comparable(string $path): string
+    {
+        $path = str_replace('\\', '/', $path);
+
+        return PHP_OS_FAMILY === 'Windows' ? strtolower($path) : $path;
     }
 
     private static function absolute(Project $project, string $path): string
