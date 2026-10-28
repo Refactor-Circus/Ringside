@@ -60,6 +60,8 @@ The user is not watching this session; RingMaster is where they answer. Wherever
 
 Run one command per Bash call (no `;`, `&&` or pipes): a session started by RingMaster's runner may only run the commands it allows, and a compound command is refused as a whole.
 
+Never switch branches, commit or stash in a package's main checkout: other jobs build against it. A task that is not a factory job (a Dependabot fix, a small change) works in a worktree of its own beside the package (`git worktree add ../<Package>--<slug> -b <branch> origin/{{base_branch}}`, or the PR's branch), removed once it is merged.
+
 Never answer an architectural question yourself, never merge, and never push or create anything outside the repo that the stage would not (unattended, the ticket stage creates its ticket as drafted without asking; see `/ring-master-ticket`).
 
 ## Loop
