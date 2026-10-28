@@ -1,11 +1,11 @@
 # Factory decision: needs-decision
 
-Run `wf_3ad6c8ee-abf` (2026-10-28), stage `review`, round 1, gate red rounds 0.
+Run `wf_01b24242-e2e` (2026-10-28), stage `prepare`, round 0, gate red rounds 0.
 
 ## Reasons
 
-- Rework 1 (the `-d` nit) was built: task 4.1 is ticked. The compat reviewer raised one design question, below. No findings and no nits are left.
+- The main checkout has an uncommitted change the build would touch: `docs/agent/specs/2026-10-27-1101-recover-build-group-no-result/meta.yml` (status `in-review` → `merged`; PR #4 is merged).
 
 ## Questions
 
-- Q-017 (compat): the factory workflow now throws at start when `args.workflows_dir` is missing. Keep the hard failure (recommended), or fall back to a path taken from the script's own location?
+- Q-018 (build): Commit or stash these main changes before the build? Recommended: commit them on main first, then build (precedent: Atrium, 2026-10-28).

@@ -172,9 +172,8 @@ function classify(gate, reviews) {
 const ringside = command => `composer --working-dir=${job.root} exec ringside -- ${command}`
 const noCd = 'Run each ringside command exactly as written, from whatever folder you are in: never `cd` into the worktree first.'
 
-// The dirty lines that matter: a path a task group lists (exactly, or a directory holding it), or a spec folder other than this job's.
+// The dirty lines that matter: a path a task group lists, exactly or as a directory holding it. Spec folders are not: sessions write every job's reports into the main checkout, so another job's folder never blocks a build.
 // Lines are raw `git status --porcelain` output; in a workspace each is prefixed with its package folder and a colon.
-const specsDir = spec.dir.slice(0, spec.dir.lastIndexOf('/'))
 const within = (path, dir) => path === dir || path.startsWith(`${dir}/`)
 const porcelainPaths = line => {
   const m = line.match(/^\s*[MADRCUT?!]{1,2}\s+(.+)$/)
@@ -189,7 +188,7 @@ function dirtyOverlap(lines) {
     for (const raw of porcelainPaths(pkg ? prefixed[2] : line)) {
       const path = raw.replace(/\/+$/, '')
       if (within(path, spec.dir)) continue
-      if (listed.some(f => within(f, path)) || path.startsWith(`${specsDir}/`)) hits.push(pkg ? `${pkg}/${raw}` : raw)
+      if (listed.some(f => within(f, path))) hits.push(pkg ? `${pkg}/${raw}` : raw)
     }
   }
   return [...new Set(hits)]

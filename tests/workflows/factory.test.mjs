@@ -815,12 +815,12 @@ test('an untracked directory that holds a listed file stops at prepare (director
   await stopsOnDirty(['?? src/'], ['src/'], args)
 })
 
-test('spec-folder files outside the job\'s own folder stop at prepare; its own folder never counts', async () => {
-  await stopsOnDirty([
-    ' M docs/agent/specs/2026-10-01-0900-other/spec.md',
-    '?? docs/agent/specs/2026-10-02-1000-new/',
-    ' M docs/agent/specs/2026-10-23-1430-import/meta.yml',
-  ], ['docs/agent/specs/2026-10-01-0900-other/spec.md', 'docs/agent/specs/2026-10-02-1000-new/'])
+test('other jobs\' spec folders never stop a build: sessions write their reports into the main checkout', async () => {
+  const dirty = [' M docs/agent/specs/2026-10-01-0900-other/spec.md', '?? docs/agent/specs/2026-10-02-1000-new/', ' M docs/agent/specs/2026-10-23-1430-import/meta.yml', '?? .ringside-pr-body.md']
+  const { result, calls } = await run('ring-master-factory', baseArgs(), responder({ '^prepare$': held({ dirty }) }))
+  assert.equal(result.status, 'approved')
+  assert.ok(!calls.some(c => c.label === 'prepare' && result.decisions))
+  assert.deepEqual(calls.map(c => c.label).slice(0, 3), ['prepare', 'prepare setup', 'group 1'])
 })
 
 test('dirt that matches no listed file, only the job\'s own spec folder, or a group with no files lets the build go ahead', async () => {

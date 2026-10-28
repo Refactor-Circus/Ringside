@@ -1,6 +1,6 @@
 id: 2026-10-27-1101-recover-build-group-no-result
 title: Recover a build group that returns no result instead of escalating
-status: in-review
+status: merged
 pr: { number: 4, url: "https://github.com/Refactor-Circus/Ringside/pull/4" }
 review_passes: 2
 created: 2026-10-27
