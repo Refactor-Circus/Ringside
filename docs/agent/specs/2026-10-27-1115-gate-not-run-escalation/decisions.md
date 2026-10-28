@@ -135,3 +135,11 @@
 - Rationale: none given
 - Raised by: build (answered in RingMaster)
 - Date: 2026-10-28
+
+## D-018
+
+- Question: Commit or stash these main changes before the build?
+- Choice: Commit them on main first, then build
+- Rationale: none given
+- Raised by: build (answered in RingMaster)
+- Date: 2026-10-28
