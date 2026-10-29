@@ -25,7 +25,7 @@ RingMaster's runner starts headless sessions with one of two arguments; follow i
 
 ## 1. Apply answers first
 
-Call `pending-answers`. For each spec it lists, in that spec's `project_path`:
+Call `pending-answers`. For each spec it lists, in that spec's `project_path` (its folder, `spec_path`, is in the job worktree while the job is open):
 
 - **decisions**: invoke the `ring-master-decide` skill for that spec (Skill tool) and give it these answers instead of asking: each becomes the next `D-xxx` entry (choice = `answer`, rationale = `note`, raised by = `source`, "answered in RingMaster"), comes out of `questions.yml`, and the stage named by its `source` runs again (step 6 there).
 - **escalations**: `Approve as is` → invoke `ring-master-approve` (the user accepted it in RingMaster; don't ask again). `Send back with a note` → invoke `ring-master-rework` with the note. `Rebuild with variants` → invoke `ring-master-rework` with `--variants` and the note, if any: the factory builds the job several ways at once and keeps the best.
@@ -52,11 +52,13 @@ Every stage is a skill you invoke with the Skill tool; this one is the only one 
 
 The user is not watching this session; RingMaster is where they answer. Wherever a stage would ask them anything (AskUserQuestion, confirming the standards list, approving the spec):
 
-1. Make sure the spec folder exists first (create it as the stage would, with the status it would have), so the question has a home.
+1. Make sure the spec folder exists first (create it as the stage would, with `vendor/bin/ringside spec new`, with the status it would have), so the question has a home.
 2. Write each question to the spec's `questions.yml` (format in `/ring-master-decide`) with concrete options, your recommendation (the exact text of one option, not a letter), the evidence in one line, and `source:` the stage to come back to: `ticket`, `shape`, `spec-review`, `approval`, `tasks` or `build`. Ask everything that stage needs in one go. Check each against `precedents` first (below).
-3. Set `status: needs-decision` in `meta.yml`, call `heartbeat` with "Waiting on you: <first question>", and move on to the next task.
+3. Set `status: needs-decision` in `meta.yml`, commit the record (`vendor/bin/ringside spec commit <id> "questions for you"`), call `heartbeat` with "Waiting on you: <first question>", and move on to the next task.
 
 {{precedent}}
+
+{{spec_record}}
 
 Run one command per Bash call (no `;`, `&&` or pipes): a session started by RingMaster's runner may only run the commands it allows, and a compound command is refused as a whole.
 

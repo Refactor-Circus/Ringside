@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace RefactorCircus\Ringside\Console;
 
 use RefactorCircus\Ringside\Shell;
-use RefactorCircus\Ringside\Specs\SpecRepository;
+use RefactorCircus\Ringside\Specs\Locator;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 #[AsCommand(name: 'cleanup', description: 'List job worktrees whose spec is closed or gone, and remove them with --remove')]
@@ -25,12 +26,15 @@ final class CleanupCommand extends Command
         $project = $this->project();
         $worktrees = [];
 
-        foreach (glob($project->path((new SpecRepository)->dir($project)).'/*/meta.yml') ?: [] as $file) {
-            $meta = Yaml::parseFile($file);
-
-            if (is_array($meta) && is_string($meta['worktree'] ?? null)) {
-                $worktrees[basename(dirname($file))] = ['path' => $meta['worktree'], 'status' => (string) ($meta['status'] ?? 'unknown')];
+        // Each job worktree holds its spec, so its status is read there.
+        foreach (Locator::worktrees($project) as $spec => $path) {
+            try {
+                $meta = Yaml::parseFile($path.'/'.Locator::relative($project).'/'.$spec.'/meta.yml');
+            } catch (ParseException) {
+                $meta = [];
             }
+
+            $worktrees[$spec] = ['path' => $path, 'status' => is_array($meta) ? (string) ($meta['status'] ?? 'unknown') : 'unknown'];
         }
 
         $remove = (array) $input->getOption('remove');
@@ -38,7 +42,7 @@ final class CleanupCommand extends Command
         $orphans = array_filter($worktrees, static fn (array $w): bool => in_array($w['status'], ['closed', 'done'], true));
 
         foreach ($worktrees as $spec => $worktree) {
-            $exists = is_dir($project->path($worktree['path']));
+            $exists = is_dir($worktree['path']);
             $wanted = in_array($spec, $remove, true) || ($all && isset($orphans[$spec]));
 
             if ($wanted && $exists) {

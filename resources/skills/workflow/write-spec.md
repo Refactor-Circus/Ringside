@@ -7,7 +7,7 @@ argument-hint: "[spec id; defaults to the newest shaping spec]"
 
 # Write the spec
 
-Pick the spec: `$ARGUMENTS` when given, otherwise the newest folder in `{{specs_dir}}/` whose `meta.yml` has `status: shaping`. Read its `shape.md`, `references.md` and, if present, `decisions.md` (final answers; follow them). When `meta.yml` has a `ticket:`, link it at the top of `spec.md`.
+Pick the spec: `$ARGUMENTS` when given, otherwise the newest `shaping` spec in `vendor/bin/ringside specs`; `vendor/bin/ringside spec path <id>` prints its folder. Read its `shape.md`, `references.md` and, if present, `decisions.md` (final answers; follow them). When `meta.yml` has a `ticket:`, link it at the top of `spec.md`.
 
 ## standards.md
 
@@ -54,7 +54,7 @@ Keep it as short as the work allows. Every acceptance criterion must be checkabl
 
 ## New packages
 
-If the work needs a package that doesn't exist yet (workspaces only), list it in `meta.yml`. Creating a package is an architectural decision, so every field the user hasn't settled in `decisions.md` stays open for `/ring-master-spec-review` to ask about:
+If the work needs a package that doesn't exist yet (in a workspace of sibling packages), list it in `meta.yml`. Creating a package is an architectural decision, so every field the user hasn't settled in `decisions.md` stays open for `/ring-master-spec-review` to ask about:
 
 ```yaml
 new_packages:
@@ -69,4 +69,6 @@ new_packages:
 
 ## Approve
 
-Show the user the acceptance criteria and the standards list, then set `status: written` in `meta.yml`. Next step: `/ring-master-spec-review`, which critiques the spec, asks the design questions and gets the user's approval. (If spec review is turned off, ask the user to approve here and set `status: approved`.)
+Show the user the acceptance criteria and the standards list, then set `status: written` in `meta.yml`, and commit the record: `vendor/bin/ringside spec commit <id> "spec written"`. Next step: `/ring-master-spec-review`, which critiques the spec, asks the design questions and gets the user's approval. (If spec review is turned off, ask the user to approve here, set `status: approved` and commit it with "approved".)
+
+{{spec_record}}

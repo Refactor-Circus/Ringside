@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RefactorCircus\Ringside;
 
 use RefactorCircus\Ringside\Render\Template;
+use RefactorCircus\Ringside\Specs\Locator;
 use RefactorCircus\Ringside\Standards\FrontMatter;
 use RefactorCircus\Ringside\Standards\Hash;
 use RefactorCircus\Ringside\Standards\Layer;
@@ -259,9 +260,15 @@ final class Installer
      */
     private function gitignore(Project $project): array
     {
+        $specs = Locator::relative($project);
         $lines = [
             '/'.Sync::indexPath($project),
             '/'.Sync::summaryPath($project),
+            // Spec folders are committed with their job; a session's scratch files and a replay's reports in them are not.
+            "/{$specs}/*/.*",
+            "/{$specs}/**/*.tmp.*",
+            "/{$specs}/*/*body*.md",
+            "/{$specs}/*/replay/",
         ];
 
         if (! $project->config->bool('generated.commit')) {

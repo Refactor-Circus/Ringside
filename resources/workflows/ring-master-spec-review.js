@@ -12,7 +12,8 @@ export const meta = {
 const { spec, job, decisions = [], config, pass = 1, recheck = [] } = args
 const SEVERITIES = ['architectural', 'blocker', 'major', 'minor', 'nit']
 const settings = config.stages.spec_review
-const specDir = `${job.root}/${spec.dir}`
+// The spec folder wherever it lives (its job worktree, or main once merged); an older job JSON names only spec.dir, on main.
+const specDir = spec.path || `${job.root}/${spec.dir}`
 const critics = settings.critics || []
 const rounds = Math.max(1, settings.rounds || 1)
 const maxPasses = Math.max(1, settings.max_passes || 2)

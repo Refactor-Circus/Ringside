@@ -154,48 +154,6 @@ test('the gate runs ringside check in the job worktree through composer, never b
   assert.doesNotMatch(prompt, /vendor\/bin\/ringside/)
 })
 
-const workspaceArgs = () => {
-  const args = baseArgs({
-    workspace: {
-      dir: '.ring-master/jobs/2026-10-23-1430-import',
-      packages: {
-        Keystone: { name: 'refactor-circus/keystone', commands: { test: 'composer test:unit', verify: 'composer test', format_check: 'composer lint:check' }, standards: [] },
-        Atrium: { name: 'refactor-circus/atrium', commands: { test: 'composer test:unit', verify: 'composer test', format_check: null }, standards: ['Atrium/docs/agent/standards/atrium/components.md'] },
-      },
-    },
-  })
-  args.waves = [[{ n: 1, name: 'Contract', package: 'Keystone', files: ['src/Importer.php'], criteria: [1], tasks: [] }], [{ n: 2, name: 'Screen', package: 'Atrium', files: ['src/Import.php'], criteria: [2], tasks: [] }]]
-  return args
-}
-
-test('a workspace job builds each group in its own package worktree and gates every package', async () => {
-  const { result, calls } = await run('ring-master-factory', workspaceArgs(), responder())
-  assert.equal(result.status, 'approved')
-  assert.deepEqual(result.packages, ['Keystone', 'Atrium'])
-  assert.match(calls.find(c => c.label === 'prepare').prompt, /ringside -- worktrees 2026-10-23-1430-import --setup/)
-  assert.match(calls.find(c => c.label === 'group 1').prompt, /\.ring-master\/jobs\/2026-10-23-1430-import\/Keystone/)
-  assert.match(calls.find(c => c.label === 'group 2').prompt, /\.ring-master\/jobs\/2026-10-23-1430-import\/Atrium/)
-  assert.match(calls.find(c => c.label === 'group 2').prompt, /Atrium's own standards, which override.*atrium\/components\.md/)
-  assert.match(calls.find(c => c.label === 'code r1').prompt, /Atrium: \/work\/pkg\/Atrium\/docs\/agent\/standards\/atrium\/components\.md/)
-  assert.deepEqual(calls.filter(c => c.label.startsWith('gate')).map(c => c.label).sort(), ['gate Atrium r1', 'gate Keystone r1'])
-})
-
-test('a red gate in one package of a workspace job is fixed before review', async () => {
-  let red = true
-  const { result, calls } = await run('ring-master-factory', workspaceArgs(), responder({
-    '^gate Atrium': () => (red ? (red = false, { passed: false, findings: [{ severity: 'blocker', files: ['Atrium/tests/ImportTest.php'], summary: 'test fails' }], changed_files: [] }) : green),
-  }))
-  assert.equal(result.status, 'approved')
-  assert.ok(calls.some(c => c.label === 'rework r1'))
-  assert.ok(!calls.some(c => c.label === 'code r1'))
-})
-
-test('architectural paths apply inside each package of a workspace', async () => {
-  const contract = { severity: 'major', files: ['Keystone/composer.json'], summary: 'require a new package', fix: 'add it' }
-  const { result } = await run('ring-master-factory', workspaceArgs(), responder({ '^code r1$': { findings: [contract], decisions: [] } }))
-  assert.equal(result.status, 'needs-decision')
-})
-
 const withRoles = (roles, extra = {}) => baseArgs({ ...extra, config: { roles: { prepare: { model: 'haiku' }, reviewer: { model: 'sonnet' }, triage: { enabled: false }, approver: { enabled: false }, ...roles }, ...(extra.config || {}) } })
 const escalating = { gate: { model: 'sonnet', escalate_model: 'opus' }, reworker: { model: 'sonnet', escalate_model: 'opus' } }
 
@@ -300,7 +258,7 @@ test('a failed integration escalates before the gate', async () => {
   assert.ok(!calls.some(c => c.label.startsWith('gate')))
 })
 
-test('a single-group wave, a workspace job and a serial build keep the shared job worktree', async () => {
+test('a single-group wave and a serial build keep the shared job worktree', async () => {
   const one = baseArgs({ config: { build: { parallel: true, max_concurrency: 4, worktree: { mode: 'per-job', setup: 'auto' } } } })
   const single = await run('ring-master-factory', one, responder())
   assert.ok(!single.calls.some(c => c.label.startsWith('group worktrees') || c.label.startsWith('integrate')))
@@ -414,14 +372,6 @@ test('a variant that blocks drops out; when none is left the job escalates', asy
   }))
   assert.equal(result.status, 'escalated')
   assert.equal(result.stage, 'variants')
-})
-
-test('a workspace job ignores variants and builds once', async () => {
-  const args = workspaceArgs()
-  args.variants = 3
-  const { calls, logs } = await run('ring-master-factory', args, responder())
-  assert.ok(!calls.some(c => c.label.startsWith('variant')))
-  assert.ok(logs.some(l => /only a single package with per-job worktrees builds variants/.test(l)))
 })
 
 // --- ringside check stays out of Ringside's own gate (D-009, tooling/verification-gate) ---
@@ -734,7 +684,6 @@ const everyRun = async () => [
     '^adopt': { merged: true },
   })),
   await run('ring-master-factory', parallelArgs(), responder({ '^group worktrees': { ready: true }, '^integrate': { merged: true, conflicts: [] } })),
-  await run('ring-master-factory', workspaceArgs(), responder()),
   await run('ring-master-factory', baseArgs({ replay: true }), responder({ '^prepare$': { ready: true, worktree: '/work/pkg--import--replay' } })),
 ]
 
@@ -817,7 +766,7 @@ test('an untracked directory that holds a listed file stops at prepare (director
   await stopsOnDirty(['?? src/'], ['src/'], args)
 })
 
-test('other jobs\' spec folders never stop a build: sessions write their reports into the main checkout', async () => {
+test('spec folders left on main never stop a build: each job\'s own is in its worktree', async () => {
   const dirty = [' M docs/agent/specs/2026-10-01-0900-other/spec.md', '?? docs/agent/specs/2026-10-02-1000-new/', ' M docs/agent/specs/2026-10-23-1430-import/meta.yml', '?? .ringside-pr-body.md']
   const { result, calls } = await run('ring-master-factory', baseArgs(), responder({ '^prepare$': held({ dirty }) }))
   assert.equal(result.status, 'approved')
@@ -908,28 +857,6 @@ test('a clean preflight keeps ringside check in both gate prompts', async () => 
   assert.match(calls.find(c => c.label === 'gate v1').prompt, /`composer --working-dir='\/work\/pkg--import--v1' exec ringside check`/)
   assert.match(calls.find(c => c.label === 'gate r1').prompt, /`composer --working-dir='\/work\/pkg--import' exec ringside check`/)
   assert.ok(!logs.some(l => /dropped/.test(l)))
-})
-
-test('a workspace job runs the preflight in each package folder and aggregates the results', async () => {
-  const { calls } = await run('ring-master-factory', workspaceArgs(), responder())
-  const prompt = calls.find(c => c.label === 'prepare').prompt
-  const setup = prompt.indexOf('worktrees 2026-10-23-1430-import --setup')
-  for (const p of ['Keystone', 'Atrium']) {
-    for (const step of [`\`git -C /work/pkg/${p} status --porcelain\``, `\`git -C /work/pkg/${p} remote get-url origin\``, `/work/pkg/${p}/ring-master.yml`, `/work/pkg/${p}/docs/agent/standards.index.yml`]) {
-      assert.ok(prompt.includes(step), step)
-      assert.ok(prompt.indexOf(step) < setup, `${step} comes before worktrees --setup`)
-    }
-  }
-  assert.match(prompt, /prefixed with its package folder and a colon/)
-  // Each package's dirt is matched against that package's groups only.
-  await stopsOnDirty(['Keystone: M src/Importer.php', 'Atrium:?? scratch.txt', 'Atrium: M src/Importer.php'], ['Keystone/src/Importer.php'], workspaceArgs())
-  const unrelated = await run('ring-master-factory', workspaceArgs(), responder({ '^prepare$': held({ dirty: ['Atrium: M src/Importer.php'] }) }))
-  assert.equal(unrelated.result.status, 'approved')
-  const pr = workspaceArgs()
-  pr.config.host = { base: 'main', provider: 'github' }
-  const noRemote = await run('ring-master-factory', pr, responder({ '^prepare$': held({ remote: false, detail: 'Atrium has no origin remote' }) }))
-  assert.deepEqual(noRemote.result.decisions.map(d => d.question), [REMOTE_ASK])
-  assert.deepEqual(noRemote.calls.map(c => c.label), ['prepare'])
 })
 
 // cwd-proof gate commands (resources/workflows/gate-command.js, D-007, D-008, D-010, D-011).
@@ -1036,23 +963,6 @@ test('a gate that could not run a command escalates at stage gate in round 1, wi
   assert.ok(!r.calls.some(c => /^(code|security) r1$/.test(c.label)), 'no reviewer runs')
 })
 
-test('a workspace package that could not run a command escalates the job, its package name in the reason (9b)', async () => {
-  const r = await run('ring-master-factory', workspaceArgs(), responder({ '^gate Atrium r1$': unrunGate([refused('composer --working-dir=/tmp/t exec pest')]) }))
-  assertGateEscalation(r, ['gate could not run: Atrium: composer --working-dir=/tmp/t exec pest: runner refused: not in allowlist'])
-})
-
-test('workspace not_run reasons keep package order, one per entry, the reason verbatim after the second colon', async () => {
-  const r = await run('ring-master-factory', workspaceArgs(), responder({
-    '^gate Keystone r1$': unrunGate([refused('composer test', 'refused: rule 3: no composer')]),
-    '^gate Atrium r1$': unrunGate([refused('composer analyse', 'one'), refused('composer lint:check', 'two')]),
-  }))
-  assertGateEscalation(r, [
-    'gate could not run: Keystone: composer test: refused: rule 3: no composer',
-    'gate could not run: Atrium: composer analyse: one',
-    'gate could not run: Atrium: composer lint:check: two',
-  ])
-})
-
 test('a gate that ran everything and failed still counts a red round and reworks (9c, AC7)', async () => {
   let gates = 0
   const { result, calls } = await run('ring-master-factory', baseArgs(), responder({ '^gate': () => (++gates === 1 ? redGate : green) }))
@@ -1147,10 +1057,6 @@ test('a gate without not_run, with not_run: null, or a null gate behaves as befo
   assert.equal(dead.result.status, 'approved')
   assert.equal(dead.result.gate_red_rounds, 1, 'a null gate still counts red')
   assert.match(dead.calls.find(c => c.label === 'rework r1').prompt, /gate agent failed/)
-
-  const deadPackage = await run('ring-master-factory', workspaceArgs(), responder({ '^gate Atrium r1$': null }))
-  assert.equal(deadPackage.result.status, 'approved')
-  assert.equal(deadPackage.result.gate_red_rounds, 1)
 })
 
 test('a malformed not_run entry is coerced: no undefined in the reasons, each reason cut to 500 characters (9j, AC1)', async () => {
@@ -1182,13 +1088,6 @@ test('the single-package gate prompt rewrites a vendor/bin verify command and st
   const prompt = calls.find(c => c.label === 'gate r1').prompt
   assertGatePrompt(prompt, '/work/pkg--import')
   assert.ok(prompt.includes(`composer ${wd} exec ringside check`))
-})
-
-test('every workspace per-package gate prompt rewrites its vendor/bin verify command and states the not_run rule (AC3)', async () => {
-  const args = workspaceArgs()
-  for (const p of Object.values(args.workspace.packages)) p.commands = { ...binCommands }
-  const { calls } = await run('ring-master-factory', args, responder())
-  for (const p of ['Keystone', 'Atrium']) assertGatePrompt(calls.find(c => c.label === `gate ${p} r1`).prompt, `/work/pkg/.ring-master/jobs/2026-10-23-1430-import/${p}`)
 })
 
 test('every variant gate prompt rewrites its vendor/bin verify command and states the not_run rule (AC3)', async () => {
@@ -1225,4 +1124,17 @@ test('workflow scripts use no import, and the inlined cwdProof is an exact copy 
   const module = readFileSync(new URL('gate-command.js', dir), 'utf8')
   const body = module.slice(module.indexOf('const WORKING_DIR')).trimEnd() + '\n'
   assert.equal(inline, body.replace('export function cwdProof', 'function cwdProof'))
+})
+
+test('reports go to the spec folder in the job worktree, and reviewers leave that folder out', async () => {
+  const args = baseArgs()
+  args.spec.path = '/work/pkg--import/docs/agent/specs/2026-10-23-1430-import'
+  const { calls } = await run('ring-master-factory', args, responder())
+  const gate = calls.find(c => c.label === 'gate r1').prompt
+  assert.match(gate, /Write \/work\/pkg--import\/docs\/agent\/specs\/2026-10-23-1430-import\/round-1\/gate\.md/)
+  assert.match(gate, /the spec folder .* is in it, committed with the job/)
+  assert.match(calls.find(c => c.label === 'group 1').prompt, /tick the finished tasks in \/work\/pkg--import\/docs\/agent\/specs\/2026-10-23-1430-import\/tasks\.md/)
+  assert.match(calls.find(c => c.label === 'code r1').prompt, /the spec folder \(docs\/agent\/specs\/2026-10-23-1430-import\) is the job's own record/)
+  assert.match(calls.find(c => c.label === 'brief').prompt, /':\(exclude\)docs\/agent\/specs\/2026-10-23-1430-import'/)
+  assert.ok(!calls.some(c => c.prompt.includes('/work/pkg/docs/agent/specs/2026-10-23-1430-import')), 'nothing is written to the main checkout')
 })

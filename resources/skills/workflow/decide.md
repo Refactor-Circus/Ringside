@@ -13,7 +13,7 @@ Architectural decisions belong to the user. Never answer them yourself.
 2. For each question, use AskUserQuestion: the question, each option (the agents' recommendation first, marked recommended), and the evidence in one line. The user may answer with their own option. When `/ring-master-inbox` brings answers the user gave in RingMaster, use those as given and don't ask again.
 3. Append each answer to `decisions.md` as the next `D-xxx` entry (question, choice, rationale, date, raised by). Never edit earlier entries. Then rewrite `questions.yml` without the answered entries (with the Write tool; `[]` when none are left).
 4. If an answer changes scope, add a dated "Addendum" section to `spec.md` and, if needed, new tasks to `tasks.md`.
-5. Comment the decisions on the ticket (tracker adapter `comment`).
+5. Commit the record: `vendor/bin/ringside spec commit <id> "decided <the D-ids>"`, so the job branch keeps each decision. Comment the decisions on the ticket (tracker adapter `comment`).
 6. Relaunch by each question's `source`, the stage it came from: `ticket` (create the ticket as drafted, or redraft) and `shape` go back to `/ring-master-shape-spec`'s next step; `spec-review` goes back to `/ring-master-spec-review <spec> --recheck=<the D-ids you just recorded>` (status `written`), which checks that those answers landed instead of reviewing the whole spec again; `approval` sets `status: approved` when the answer approves the spec, or revises `spec.md` and asks again; `tasks` goes back to `/ring-master-create-tasks`; `build` sets `status: approved` and runs `/ring-master-factory`. Finished task groups stay ticked, so the build resumes where it stopped.
 
 `questions.yml` holds the open questions so that RingMaster can show them too:
@@ -32,5 +32,7 @@ Quote every value that holds `#`, `: `, a comma or brackets (`question: "Rebase 
 {{precedent}}
 
 Asking here, show a precedent the evidence names first, with its option marked recommended; the user still chooses.
+
+{{spec_record}}
 
 {{tracker_adapters}}
