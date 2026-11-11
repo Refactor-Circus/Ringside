@@ -27,7 +27,7 @@
     },
     "require-dev": {
         "composer/composer": "^2.8",
-        "laravel/pint": "^1.32.1",
+        "laravel/pint": "^1.32.1, !=1.32.2",
         "pestphp/pest": "^5.3.1",
         "phpstan/phpstan": "^2.1"
     },
