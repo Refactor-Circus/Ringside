@@ -11,7 +11,8 @@ function runHook(string $root, string $event, string $stdin = ''): string
         [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
         $pipes,
         $root,
-        ['CLAUDE_PROJECT_DIR' => $root, 'PATH' => (string) getenv('PATH')],
+        // The whole environment: Windows cannot start PHP without SystemRoot and its kin.
+        [...getenv(), 'CLAUDE_PROJECT_DIR' => $root],
     );
 
     fwrite($pipes[0], $stdin);
